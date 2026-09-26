@@ -1,0 +1,46 @@
+[project]
+name = "smart-parking"
+version = "0.1.0"
+description = "Smart Parking Occupancy Analytics on Kafka"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "confluent-kafka>=2.6",
+    "pydantic>=2.9",
+    "datasketch>=1.6",
+    "prometheus-client>=0.21",
+    "structlog>=24.4",
+    "psycopg[binary]>=3.2",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-cov>=6.0",
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "testcontainers>=4.8",
+]
+
+[tool.setuptools]
+packages = ["common", "simulator", "processor", "sink", "alerter"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = ["common.*", "processor.*"]
+strict = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["integration: needs the docker compose stack running"]
+addopts = "-m 'not integration'"
