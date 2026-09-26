@@ -71,7 +71,8 @@ class FaultInjector:
             self.counters.late += 1
         else:
             out.append(self._message(e, wall_now))
-            if self._rng.random() * 100 < cfg.dup_pct:
+            # Only state-changing events are de-duplicated downstream, so only they are duplicated.
+            if not e.heartbeat and self._rng.random() * 100 < cfg.dup_pct:
                 out.append(out[0])
                 self.counters.duplicates += 1
         if self._rng.random() * 100 < cfg.malformed_pct:

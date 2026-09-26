@@ -20,6 +20,7 @@ def producer_config(bootstrap: str, client_id: str) -> dict[str, Any]:
         "partitioner": "murmur2_random",  # Java-compatible, matches common.partitioning
         "linger.ms": 20,
         "batch.num.messages": 10000,
+        "message.max.bytes": 16_777_216,  # checkpoints on state.changelog can be several MB
     }
 
 

@@ -78,13 +78,17 @@ class LotState:
 
     def process(self, e: ParkingEvent, ingest_ts: float) -> Outcome:
         ts = e.event_ts.timestamp()
-        if e.event_id in self.seen:
-            return Outcome.DUPLICATE
-        self._remember(e.event_id, ts)
-
         occupancy = e.event_type is EventType.OCCUPANCY
-        if occupancy and self._is_late(ts):
-            return Outcome.LATE
+        # Only state-changing events are de-duplicated. Re-processing a heartbeat is harmless (it
+        # takes a max and advances time monotonically) and heartbeats are the bulk of the traffic:
+        # remembering their ids made every checkpoint grow with the event rate until it exceeded
+        # Kafka's message size limit (found by the load test at 25,000 events/s).
+        if occupancy:
+            if e.event_id in self.seen:
+                return Outcome.DUPLICATE
+            self._remember(e.event_id, ts)
+            if self._is_late(ts):
+                return Outcome.LATE
 
         self._advance_time(ts)
         self.sensors[e.sensor_id] = max(self.sensors.get(e.sensor_id, ts), ts)

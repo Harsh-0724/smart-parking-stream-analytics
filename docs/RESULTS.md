@@ -74,6 +74,23 @@ Scenario B, 60 s at `--speed 5` (12 lots, ~120 events/s, 2 processors), correcte
 
 A first measurement of ingest-to-emit read p95 = 29 s. That was a flaw in the metric (see D18), not the pipeline. A second early run also showed 737 late events because the processors still held lot state whose event time was two days in the future from a previous scenario: event-time state must be reset (`make reset-topics`) between scenarios that use a different `--start`.
 
+## Bugs and flaws found by running things for real
+Every item below was found by executing the system (or by reviewing code that had only been unit-tested), not by the spec. They are the honest evidence for CO3 and CO4.
+
+| # | Where | What went wrong | How it was found | Fix and guard |
+|---|---|---|---|---|
+| 1 | Alerter | `Producer.produce(topic, lot_id, json)` passed key and value positionally, which swapped them (the second positional argument is the value). | Live run: consumer logged `Invalid JSON ... input_value=b'LOT-07'`. Unit tests cannot see it. | Keyword arguments everywhere; the integration test round-trips alert payloads. |
+| 2 | Processor | Metadata refresh was rate-limited to 5 s, so a lot whose metadata arrived just after startup was processed with unknown capacity and its **closed** windows were emitted with a guessed capacity, never corrected. | Integration test from a clean stack (a warm stack hid it). | Closed windows force an unthrottled metadata lookup before emission (`ProcessorApp._publish_closed`). |
+| 3 | API feed | A malformed message on `parking.raw` made `json.loads` raise inside the feed thread, which would have restarted it in a loop. | Code review while writing the API integration test. | `parse_slot_event` ignores anything malformed; unit test with five malformed shapes; integration test sends one and checks the live feed survives. |
+| 4 | Simulator | A patch added `args.skip_weekend` but the matching `add_argument` silently did not apply after auto-formatting; mypy cannot see `Namespace` attributes, so the container crash-looped. | `docker compose` run: `unrecognized arguments: --skip-weekend`. | Added the argument and a test that parses every flag the Compose file passes to the simulator. |
+| 5 | API | `threading.Thread` subclass attributes named `_stop` and `_bootstrap` shadowed `Thread` internals (`TypeError: first arg must be callable`). | First container start. | Renamed. |
+| 6 | Prod compose | Compose merges list fields, so `web` would have published the dev port 8081 in production. | `docker compose config --format json` on the merged files. | `ports: !override`; the check now prints published ports per service. |
+| 7 | CI | Job names containing `: ` made the workflow YAML invalid; GitHub reported a failed run with no jobs. | First push. | Quoted the names; YAML validated locally with PyYAML before pushing. |
+| 8 | Measurement | Committed-offset lag saw-tooths up to 10 s of traffic because commits happen only at checkpoints, so drain times were meaningless. | Lag-spike scenario. | Backlog is now end offsets minus events consumed (see "Measurement notes" below). |
+| 9 | Measurement | "Graceful stop" of a broker reports a 1.7 s election because the broker hands off leadership before exiting; a crash takes 9 s. | Broker scenario. | The scenario defaults to SIGKILL and keeps the graceful run as a labelled data point. |
+| 10 | Measurement | The first latency metric measured the age of a quiet window's last occupancy event (p95 29 s). | Prometheus check. | Per-event ingest-to-emit sampling (D18). |
+| 11 | Demo | Rebuilding images mid-run recreated the simulator and processors with a fresh clock; a restart with a different `--start` leaves processors with a stale watermark. | Frontend session. | `make demo-reset`; the first pre-demo step in DEMO.md. |
+
 ## Phase 8: chaos runs (appended by scripts/chaos_*.py)
 
 ### Processor crash: PASS (2026-09-26 16:00 UTC)
@@ -204,3 +221,23 @@ HyperLogLog p=10: 1,024 bytes of registers, theoretical standard error 3.25%. Ex
 | 10,000 | 10 | 1.18% | 3.79% | 1,069 KiB | 1 KiB |
 | 100,000 | 5 | 3.78% | 5.43% | 9,663 KiB | 1 KiB |
 | 1,000,000 | 2 | 4.26% | 7.57% | 88,432 KiB | 1 KiB |
+
+### Load test: ramp at 1, 2 and 3 processors (2026-09-26 18:16 UTC)
+`make load-test`. 30 s per step, valid events at an exact offered rate (30% OCCUPANCY, 70% HEARTBEAT, 12 lots x 200 slots, production producer settings), event time = wall time. Generator and stack share one machine (10 CPUs, Docker Desktop), so figures are a lower bound. Backlog = `parking.raw` end offsets minus events consumed. Latency is ingest-to-emit from Prometheus (sampled 1 in 8 events); the 5 s emit interval sets its floor. Charts: `docs/loadtest/load_test.png`, data: `docs/loadtest/load_test.csv`.
+
+| Processors | Offered/s | Produced/s | Consumed/s | p50 | p95 | p99 | Backlog at end | Drain | Processor CPU | |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | 1,000 | 1,001 | 878 | 2.8 s | 5.0 s | 8.8 s | 0 | 1 s | 5% |  |
+| 1 | 5,000 | 5,008 | 4,563 | 2.7 s | 4.9 s | 7.9 s | 0 | 1 s | 9% |  |
+| 1 | 10,000 | 10,007 | 8,934 | 2.6 s | 4.8 s | 6.6 s | 0 | 1 s | 16% |  |
+| 1 | 25,000 | 25,028 | -14,480 | nan s | nan s | nan s | 1,192,332 | n/a | 1% | saturated |
+| 2 | 1,000 | 1,002 | 858 | 2.6 s | 4.9 s | 8.4 s | 0 | 1 s | 5% |  |
+| 2 | 5,000 | 5,008 | 4,439 | 2.7 s | 4.9 s | 8.4 s | 0 | 1 s | 11% |  |
+| 2 | 10,000 | 10,008 | 9,519 | 2.6 s | 4.8 s | 6.5 s | 0 | 1 s | 20% |  |
+| 2 | 25,000 | 25,024 | -13,930 | nan s | nan s | nan s | 1,231,261 | n/a | 1% | saturated |
+| 3 | 1,000 | 1,001 | 947 | 2.6 s | 4.9 s | 8.0 s | 0 | 1 s | 7% |  |
+| 3 | 5,000 | 5,005 | 4,786 | 2.6 s | 4.9 s | 8.5 s | 0 | 1 s | 14% |  |
+| 3 | 10,000 | 10,012 | 9,713 | 2.6 s | 4.9 s | 8.3 s | 0 | 1 s | 23% |  |
+| 3 | 25,000 | 25,020 | -15,407 | nan s | nan s | nan s | 1,231,140 | n/a | 53% | saturated |
+
+HyperLogLog accuracy and memory (worst error 7.57% at 1M vehicles against a 9.75% limit; 1 KiB per window versus 88 MB for an exact set) is in the section above.

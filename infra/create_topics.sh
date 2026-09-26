@@ -27,5 +27,10 @@ create lot.occupancy.5min 3 "retention.ms=$((7 * ONE_DAY_MS))"
 create lot.alerts 1 "retention.ms=$((7 * ONE_DAY_MS))"
 create state.changelog 6 cleanup.policy=compact min.cleanable.dirty.ratio=0.1 segment.ms=60000
 
+# A checkpoint holds a lot's slot map, open windows and dedupe set; a very busy lot can exceed the
+# 1 MB default. Applied with --alter so it also reaches clusters created before this setting existed.
+"$(dirname "$KT")/kafka-configs.sh" --bootstrap-server "$BS" --alter --entity-type topics \
+  --entity-name state.changelog --add-config max.message.bytes=16777216
+
 echo "--- topic layout ---"
 "$KT" --bootstrap-server "$BS" --describe

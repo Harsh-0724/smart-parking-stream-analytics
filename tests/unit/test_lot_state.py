@@ -244,14 +244,26 @@ def test_restore_from_checkpoint_matches_uninterrupted_run() -> None:
     assert emitted_before + _outputs(restored, 1e9) == _outputs(straight, 1e9)
 
 
-def test_replayed_events_after_restore_are_dropped_as_duplicates() -> None:
+def test_replayed_state_changes_after_restore_are_dropped_as_duplicates() -> None:
     events = _script()
     a = fresh()
     feed(a, *events[:250])
     restored = LotState.from_dict(json.loads(json.dumps(a.to_dict())), PARAMS)
-    replayed = feed(restored, *events[200:250])  # crash before commit: 50 events come again
-    assert set(replayed) == {Outcome.DUPLICATE}
+    replayed = [
+        o
+        for e, o in zip(events[200:250], feed(restored, *events[200:250]), strict=True)
+        if e.event_type.value == "OCCUPANCY"
+    ]
+    assert replayed and set(replayed) == {Outcome.DUPLICATE}
     assert restored.to_dict()["count"] == a.to_dict()["count"]
+
+
+def test_heartbeat_ids_are_not_remembered_and_replays_are_harmless() -> None:
+    s = fresh()
+    hb = ev(B + 10, "A-009", None, event_id="hb1")
+    assert feed(s, hb, hb) == [Outcome.ACCEPTED, Outcome.ACCEPTED]
+    assert "hb1" not in s.seen  # checkpoints must not grow with the heartbeat rate
+    assert s.sensors["S-A-009"] == B + 10 and s.count == 0
 
 
 def test_invalid_dedupe_ttl_is_rejected() -> None:
