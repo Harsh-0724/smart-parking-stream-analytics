@@ -73,3 +73,134 @@ Scenario B, 60 s at `--speed 5` (12 lots, ~120 events/s, 2 processors), correcte
 | Checkpoint duration p95, size | 21 ms, about 200 KB per instance |
 
 A first measurement of ingest-to-emit read p95 = 29 s. That was a flaw in the metric (see D18), not the pipeline. A second early run also showed 737 late events because the processors still held lot state whose event time was two days in the future from a previous scenario: event-time state must be reset (`make reset-topics`) between scenarios that use a different `--start`.
+
+## Phase 8: chaos runs (appended by scripts/chaos_*.py)
+
+### Processor crash: PASS (2026-09-26 16:00 UTC)
+SIGKILL one of 2 processors at ~35 s of a 90 s run (speed 60)
+
+| Result | Expectation | Measured |
+|---|---|---|
+| PASS | survivor assigned the 3 orphaned partitions within 30 s | 11.5 s |
+| PASS | state restored from state.changelog | 6 lots restored |
+| PASS | consumer lag drains to 0 | 5 s |
+| PASS | no gaps: every closed window is in the database | missing=0 |
+| PASS | no wrong values vs ground truth | 204 windows compared, 0 mismatches |
+| PASS | no duplicate rows | 228 rows / 228 keys |
+
+- takeover time (kill to partitions assigned): 11.5 s
+- simulator events sent: 130499
+
+### Sink outage: PASS (2026-09-26 16:05 UTC)
+stop TimescaleDB for 60 s at ~30 s of a 120 s run (speed 60)
+
+| Result | Expectation | Measured |
+|---|---|---|
+| PASS | sink accumulated lag while the database was down | lag=420 |
+| PASS | database reachable again | 1 s |
+| PASS | consumer lag drains to 0 after restart | 9 s |
+| PASS | 0 lost: every closed window is in the database | missing=0 |
+| PASS | 0 wrong values vs ground truth | 276 windows compared, 0 mismatches |
+| PASS | 0 duplicated rows | 300 rows / 300 keys |
+
+- sink lag at end of outage: 420
+- time to drain after restart: 9 s
+
+### Bad data: PASS (2026-09-26 16:07 UTC)
+--malformed-pct 5 for 90 s (speed 60), 2 processors
+
+| Result | Expectation | Measured |
+|---|---|---|
+| PASS | consumer lag drains to 0 |  |
+| PASS | every malformed message is in parking.dlq | sent 6482, DLQ holds 6482 |
+| PASS | processor DLQ counter agrees | metric=6482 |
+| PASS | DLQ records carry the original bytes and an error reason | 50 sampled |
+| PASS | processors never crashed or restarted | restart counts ['0', '0'] |
+| PASS | valid data unaffected: windows match ground truth | 192 windows compared, 0 mismatches, 0 missing |
+
+- messages sent / malformed: 136959 / 6482
+
+### Late and duplicate data: PASS (2026-09-26 16:12 UTC)
+--late-pct 10 --dup-pct 5, in-grace (A) and beyond-grace (B) delays
+
+| Result | Expectation | Measured |
+|---|---|---|
+| PASS | A: every duplicate dropped | sent 7314, dropped 7314 |
+| PASS | A: nothing late enough for parking.late | late=0, 98 events were delayed |
+| PASS | A: in-grace late events land in the right windows (matches ground truth) | 228 windows compared, 0 mismatches, 0 missing |
+| PASS | B: every duplicate dropped | sent 7208, dropped 7208 |
+| PASS | B: beyond-grace events routed to parking.late | 29 routed of 87 delayed (the rest were inside the grace period) |
+| PASS | B: every parking.late record is past its window's close time | 29 records |
+
+- B: worst lateness recorded: 527 s behind the watermark
+
+### Measurement notes from developing the lag-spike scenario
+Five earlier runs were discarded because the method, not the pipeline, was wrong. They are recorded because each is a methodology lesson for the paper:
+1. **Committed-offset lag is a poor backlog signal.** `kafka-consumer-groups` lag is measured against committed offsets; the processor commits only at 10 s checkpoints, so lag saw-toothed up to ~190,000 events and collapsed at each commit, making drain times meaningless. Backlog is now `raw end offsets - events the processors report consuming`.
+2. **The synthetic generator cannot overload one processor.** At 200x and 800x (4,800 and 19,000 events/s) one processor never fell behind (peak backlog about 10,000, half a second of traffic), so "3 processors recover faster" was a 0 s vs 3 s noise result.
+3. **A single processor sustains about 90,000 events/s** on the Birmingham replay stream (heartbeat-dominated, so mostly the cheap path), close to the replay generator's own rate, so even replay does not build a backlog while consumers are running. The final scenario therefore produces the burst while consumers are down.
+
+### Lag spike: PASS (2026-09-26 16:31 UTC)
+20 s Birmingham replay at 1000x produced with consumers down, then drained by 1 vs 3 processors
+
+| Result | Expectation | Measured |
+|---|---|---|
+| PASS | backlog rose above 1,000,000 events (consumers down) | 2603042 |
+| PASS | same backlog in both runs (within 1%) | 2603042 vs 2601034 |
+| PASS | backlog drained to 0 (1 processor) | 31 s |
+| PASS | backlog drained to 0 (3 processors) | 24 s |
+| PASS | 3 processors drain faster than 1 | 24 s vs 31 s |
+
+- 1 processor(s): backlog before start: 2603042 events
+- 1 processor(s): container start to first consumption: 12 s
+- 1 processor(s): time to drain the backlog (from start): 31 s
+- 1 processor(s): drain rate once consuming: 142134 events/s
+- 3 processor(s): backlog before start: 2601034 events
+- 3 processor(s): container start to first consumption: 15 s
+- 3 processor(s): time to drain the backlog (from start): 24 s
+- 3 processor(s): drain rate once consuming: 293497 events/s
+- speed-up in end-to-end drain time (includes ~12-15 s container start): 1.28x
+- speed-up in drain rate once consuming: 2.06x
+
+### Broker failure (graceful stop): PASS (2026-09-26 16:34 UTC)
+stop kafka-2 (SIGTERM, controlled shutdown) at ~30 s of a 120 s run (speed 60), restart ~35 s later
+
+| Result | Expectation | Measured |
+|---|---|---|
+| PASS | leadership moved off kafka-2 within 30 s | 1.7 s (it led 22 partitions) |
+| PASS | pipeline kept producing closed windows during the outage | 60 -> 156 closed rows |
+| PASS | producer had no delivery errors (acks=all, RF=3, min.isr=2) | errors=0 |
+| PASS | ISR fully restored after restart (0 under-replicated partitions) | 1 s |
+| PASS | consumer lag drains to 0 | 2 s |
+| PASS | no data loss: every closed window is in the database | missing=0 |
+| PASS | no wrong values vs ground truth | 264 windows compared, 0 mismatches |
+
+- leader election time: 1.7 s
+- time to full ISR after restart: not meaningful in this run (it was measured after the simulator finished; the SIGKILL run below measures it from the restart command)
+
+### Broker failure (SIGKILL crash): PASS (2026-09-26 16:40 UTC)
+SIGKILL kafka-2 at ~30 s of a 120 s run (speed 60), restart ~35 s later
+
+| Result | Expectation | Measured |
+|---|---|---|
+| PASS | leadership moved off kafka-2 within 30 s | 9.1 s (it led 22 partitions) |
+| PASS | pipeline kept producing closed windows during the outage | 60 -> 168 closed rows |
+| PASS | ISR fully restored after restart (0 under-replicated partitions) | 3 s after restart |
+| PASS | producer had no delivery errors (acks=all, RF=3, min.isr=2) | errors=0 |
+| PASS | consumer lag drains to 0 | 5 s |
+| PASS | no data loss: every closed window is in the database | missing=0 |
+| PASS | no wrong values vs ground truth | 276 windows compared, 0 mismatches |
+
+- leader election time: 9.1 s
+- time to full ISR after restart: 3 s
+
+### HLL estimate vs exact distinct count: PASS (2026-09-26 16:41 UTC)
+HyperLogLog p=10: 1,024 bytes of registers, theoretical standard error 3.25%. Expectation: worst error under 3 standard errors (9.75%).
+
+| Distinct vehicles | Trials | Mean error | Max error | Exact set memory | HLL memory |
+|---|---|---|---|---|---|
+| 100 | 20 | 1.83% | 4.12% | 14 KiB | 1 KiB |
+| 1,000 | 20 | 2.46% | 5.63% | 88 KiB | 1 KiB |
+| 10,000 | 10 | 1.18% | 3.79% | 1,069 KiB | 1 KiB |
+| 100,000 | 5 | 3.78% | 5.43% | 9,663 KiB | 1 KiB |
+| 1,000,000 | 2 | 4.26% | 7.57% | 88,432 KiB | 1 KiB |

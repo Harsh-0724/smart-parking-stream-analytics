@@ -1,4 +1,4 @@
-.PHONY: up down clean topics lint type test test-integration fmt sync fetch-data reset-topics
+.PHONY: up down clean topics lint type test test-integration fmt sync fetch-data reset-topics chaos chaos-broker chaos-processor chaos-sink chaos-bad-data chaos-late-dup chaos-lag hll-accuracy
 
 COMPOSE ?= docker compose
 # Host-side tools reach the brokers through the EXTERNAL listeners.
@@ -50,3 +50,11 @@ reset-topics:
 	  $(COMPOSE) exec -T kafka-1 /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka-1:9092 --delete --topic $$t >/dev/null 2>&1 || true; done
 	@sleep 5
 	$(COMPOSE) up init
+
+chaos-broker chaos-processor chaos-sink chaos-bad-data chaos-late-dup chaos-lag: chaos-%:
+	uv run python scripts/chaos_$(subst -,_,$*).py
+
+chaos: chaos-broker chaos-processor chaos-sink chaos-bad-data chaos-late-dup chaos-lag
+
+hll-accuracy:
+	uv run python scripts/hll_accuracy.py
