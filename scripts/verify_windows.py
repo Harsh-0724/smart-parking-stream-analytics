@@ -8,7 +8,6 @@ partial by construction). Prints a JSON report; exit code 1 if any comparison fa
 
 import argparse
 import json
-import os
 import sys
 from collections import Counter
 from datetime import UTC, datetime
@@ -35,6 +34,22 @@ def load_results(bootstrap: str) -> tuple[dict[str, WindowResult], Counter[str]]
             per_key[key.decode()] += 1
             latest[key.decode()] = result
     return latest, per_key
+
+
+def load_results_db(dsn: str) -> tuple[dict[str, WindowResult], Counter[str]]:
+    """Rows of lot_occupancy_5min. The primary key guarantees one row per window."""
+    import psycopg
+
+    with psycopg.connect(dsn) as conn, conn.cursor() as cur:
+        cur.execute("SELECT * FROM lot_occupancy_5min")
+        assert cur.description is not None
+        names = [c.name for c in cur.description]
+        rows = [dict(zip(names, r, strict=True)) for r in cur.fetchall()]
+    latest = {}
+    for row in rows:
+        result = WindowResult(**row)
+        latest[result.key] = result
+    return latest, Counter({k: 1 for k in latest})
 
 
 def compare(
@@ -77,10 +92,14 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("truth", type=Path)
     ap.add_argument("summary", type=Path, help="simulator --summary-file")
+    ap.add_argument("--db", action="store_true", help="read TimescaleDB instead of the topic")
     args = ap.parse_args()
     truth = json.loads(args.truth.read_text())
-    results, per_key = load_results(os.environ.get("KAFKA_BOOTSTRAP_HOST", "localhost:19092"))
     cfg = Settings.from_env()
+    if args.db:
+        results, per_key = load_results_db(cfg.postgres_dsn)
+    else:
+        results, per_key = load_results(cfg.kafka_bootstrap)
     summary = json.loads(args.summary.read_text())
     report = compare(
         truth,

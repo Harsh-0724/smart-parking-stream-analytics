@@ -31,3 +31,11 @@ Setup: 2 processor containers (group `occupancy-processor`), 12 synthetic lots x
 | **Processor crash**: `docker kill` (SIGKILL) of one of two instances at ~35 s of a 90 s run | Survivor was assigned the dead instance's partitions ~12 s later (session timeout 10 s + rebalance), restored 6 lots from `state.changelog` and resumed at offsets 6768 to 6806. Verifier: **192 windows compared, 0 missing, 0 mismatches**. At most 3 result messages per window key (re-emission after replay), which the sink's upsert collapses to one row. |
 | Graceful SIGTERM | Logged `shutting down: final emit, checkpoint, commit`, then `partitions revoked: checkpointing before hand-off`, then `stopped`, all within ~17 ms of the signal; exit code 0. |
 | HLL vs exact (windows of a few vehicles) | mean error 0.68%, max 25% (a window with 4 vehicles estimated as 5). Large-cardinality accuracy is measured in Phase 8. |
+
+## Phase 3: TimescaleDB and sink
+| Test | Result |
+|---|---|
+| Schema | `lot_occupancy_5min` hypertable (compression enabled, segmentby `lot_id`), `alerts`, `lot_metadata`, continuous aggregate `lot_occupancy_hourly`, compression/retention/refresh policies created by `infra/timescale/init.sql` on first start. |
+| Steady state, 45 s run at `--speed 60` | 96 closed windows compared to ground truth from the database: 0 missing, 0 mismatches. 120 rows, 120 distinct keys (108 closed, 12 still open). |
+| **Sink outage**: `docker compose stop timescaledb` at 21:01:27, restart at 21:02:27 (60 s), simulator running throughout (120 s at `--speed 60`, 2 processors) | Sink logged 9 retry attempts while the DB was down and committed no offsets. After restart the group `timescale-sink` drained to **lag 0**. Verifier on the DB: **264 windows compared, 0 missing, 0 mismatches**; 300 rows = 300 distinct `(lot_id, window_start)` keys, i.e. **0 lost, 0 duplicated**. |
+| HLL on tiny windows | Over 120 windows one had 2 real vehicles estimated as 1 (both hashed into the same register). Expected for HLL at n=2 (about 0.1% chance per window); at n>=50 the unit test bounds the error to 3 standard errors. |

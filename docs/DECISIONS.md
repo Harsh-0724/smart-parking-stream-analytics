@@ -71,3 +71,10 @@ ADR-style log. Decisions already fixed in `CLAUDE.md` (Python 3.12, confluent-ka
 
 ## D15. Sensor-offline alerts are produced by the processor
 - CLAUDE.md Phase 2 places them there (only the processor holds per-sensor state and knows event time). The alerter (Phase 4) adds the full-lot alerts and owns notification.
+
+## D16. Sink design
+- One consumer (group `timescale-sink`) reads `lot.occupancy.5min`, `lot.alerts` and `lot.metadata`; per batch (up to 500 messages or 1 s) it opens **one DB transaction**, commits, and only then commits Kafka offsets. Batches are collapsed to one result per key before writing.
+- **Idempotence lives in SQL, not in Kafka.** Windows: `ON CONFLICT (lot_id, window_start) DO UPDATE ... WHERE NOT (existing.closed AND NOT excluded.closed)`, so a replayed open update can never reopen a closed window. Alerts: RAISED is `DO NOTHING` on conflict (a replay cannot resurrect a cleared alert), CLEARED sets `cleared_at` once.
+- **Database outage:** the batch is kept in memory and retried with backoff (1, 2, 5, 10 s); offsets are not committed, so if the sink itself dies the batch is replayed from Kafka. A 60 s outage is well inside `max.poll.interval.ms` (5 min).
+- Messages that fail validation are skipped and counted (`sink_invalid_messages_total`) instead of crash-looping the sink: these topics are written by our own processor, so a failure means a bug, and stopping the whole sink for one bad record would be worse.
+- Compression policy after 7 days and retention after 90 days on the hypertable; an hourly continuous aggregate over closed windows (real-time aggregation on for the most recent hour). Compression is safe with upserts because windows stop changing minutes after they close.
