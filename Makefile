@@ -1,6 +1,9 @@
 .PHONY: up down clean topics lint type test test-integration fmt sync fetch-data reset-topics
 
 COMPOSE ?= docker compose
+# Host-side tools reach the brokers through the EXTERNAL listeners.
+export KAFKA_BOOTSTRAP_HOST ?= localhost:19092,localhost:29092,localhost:39092
+export PYTHONPATH := .
 
 sync:
 	uv sync
@@ -42,6 +45,7 @@ fetch-data:
 
 # Delete and recreate every topic (drops all messages, keeps the cluster).
 reset-topics:
+	@$(COMPOSE) stop processor sink alerter simulator >/dev/null 2>&1 || true
 	@for t in parking.raw parking.dlq parking.late lot.metadata lot.occupancy.5min lot.alerts state.changelog; do \
 	  $(COMPOSE) exec -T kafka-1 /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka-1:9092 --delete --topic $$t >/dev/null 2>&1 || true; done
 	@sleep 5

@@ -27,6 +27,9 @@ class IndexedSet:
             self._items[i] = last
             self._pos[last] = i
 
+    def items(self) -> list[str]:
+        return list(self._items)
+
     def choice(self, rng: random.Random) -> str:
         return self._items[rng.randrange(len(self._items))]
 

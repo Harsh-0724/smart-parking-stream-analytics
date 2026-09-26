@@ -179,4 +179,8 @@ def _snapshots_to_events(
             when = start_ts + rng.uniform(lo, hi) - first_ts
             events.append(Emission(when, meta.lot_id, slot, False, False))
         prev_ts = ts
+        if i == 0:
+            for slot in free.items():
+                when = start_ts + rng.uniform(lo, hi) - first_ts
+                events.append(Emission(when, meta.lot_id, slot, False, False, sync=True))
     return events

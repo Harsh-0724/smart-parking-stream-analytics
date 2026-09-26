@@ -39,3 +39,35 @@ ADR-style log. Decisions already fixed in `CLAUDE.md` (Python 3.12, confluent-ka
 ## D9. Replay mode
 - Birmingham snapshots (every ~30 min) become per-slot events: |delta| arrivals or departures at jittered times inside the interval. Capacity is scaled by `--replay-scale` (default 0.1) to keep the sensor count manageable; timestamps are shifted so the first snapshot lands at "now".
 - The dataset is not committed (`data/` is gitignored). `make fetch-data` downloads it from UCI.
+
+## D10. Delivery semantics: at-least-once processing, effectively-once results
+- **What the processor guarantees:** outputs are produced and flushed, then the checkpoint is written to `state.changelog`, then offsets are committed. A crash between any two steps makes the next owner reprocess events since the last checkpoint, so window results can be emitted more than once.
+- **What makes the stored result correct anyway:** every output is keyed by `(lot_id, window_start)` and the sink upserts on that key, so a repeated result overwrites itself. The sink never lets a closed window be overwritten by an open one.
+- **What we do NOT claim:** Kafka exactly-once semantics (transactions). Outputs to `parking.dlq`, `parking.late` and `lot.alerts` may be duplicated after a crash; alert ids are deterministic (`lot|sensor|silent_since`) so consumers can dedupe.
+- **Alternatives:** Kafka transactions (`read_committed` + transactional producer + `send_offsets_to_transaction`). Rejected: the checkpoint would have to be part of the transaction, the changelog is the source of truth for state, and the brief asks for this explicit commit order.
+
+## D11. Checkpoint format and restore
+- One JSON message per lot on `state.changelog`, key = `lot_id`, **written to the same partition number as the lot's `parking.raw` partition** (explicit partition). Restoring partition N means reading changelog partition N to the end (compacted, latest per lot wins).
+- Each lot checkpoint carries `resume_offset` = next raw offset at checkpoint time. `on_assign` seeks to the *smallest* `resume_offset` in the partition, and each lot skips messages below its own `resume_offset`. This is exact even if a crash interrupted a checkpoint half-way (some lots at cycle N, some at N-1). The dedupe set is then only needed for real producer duplicates, not for replay, so its TTL does not have to cover a replay span.
+- A checkpoint is refused (process exits, restarts, replays) if any produced output is undelivered.
+
+## D12. Event-time rules (all configurable)
+- Watermark per lot = `max(event_ts seen) - ALLOWED_LATENESS_S`. An OCCUPANCY event is **late** iff `window_end + WINDOW_GRACE_S < watermark`; it goes to `parking.late` and does not touch state. A window is **closed** (final `closed=true` result) when that same inequality holds for it, so an event is accepted exactly while its window is still open.
+- Defaults 60 s lateness + 120 s grace on 5-minute windows: a window closes once event time passes `end + 180 s`.
+- Dedupe runs before the late check, so a duplicate of a late event is counted as a duplicate, not late twice. `DEDUPE_TTL_S >= lateness + grace` is enforced at startup.
+- Heartbeats only advance event time and refresh sensor liveness; they are never "late".
+- Event time is per lot. A lot that receives no events at all never advances, so its last window stays open (no wall-clock idle timeout). Sensor-offline detection is likewise in event time.
+
+## D13. Windowed metrics
+- **Average occupancy is time-weighted:** the lot's occupied count is integrated over event time into each window (`area / covered seconds`). A late-in-grace event corrects the already-integrated time retroactively, including in later still-open windows, so the result equals what in-order processing would produce.
+- **Entries/exits** count real transitions (known FREE to OCCUPIED and back). A slot's first report only initialises state, it is never an entry; the simulator therefore reports every slot (free ones too) at startup, like a sensor booting.
+- **Slot-state regression guard:** an event with `event_ts <=` the slot's last event_ts is ignored for state, but its vehicle token still enters the window's HyperLogLog (a sighting is a sighting).
+- **min/max occupied** are observed on the forward timeline only; a retroactive correction does not rewrite past extremes.
+- **Unique vehicles** use HyperLogLog p=10 (1 KiB per window, 3.25% standard error), serialised as registers inside the checkpoint.
+
+## D14. Metrics
+- Latency is measured as wall-clock `ingest_ts -> emit`, not `event_ts -> emit`: with `--speed > 1` or replay, `event_ts` is on the simulated timeline and the difference would be meaningless.
+- Metrics are per-instance on `:8000` (Prometheus scrapes each replica); no `lot` label to keep cardinality flat.
+
+## D15. Sensor-offline alerts are produced by the processor
+- CLAUDE.md Phase 2 places them there (only the processor holds per-sensor state and knows event time). The alerter (Phase 4) adds the full-lot alerts and owns notification.

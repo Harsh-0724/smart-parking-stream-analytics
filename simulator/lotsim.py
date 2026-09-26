@@ -98,6 +98,10 @@ class LotSim:
             residual = self._dwell(1.0) * self._rng.random()
             ts = start_ts - self._rng.random() * SYNC_SPREAD_S
             out.append(self._park(ts, max(residual, MIN_DWELL_S), sync=True))
+        # Sensors report their status on boot, free slots included.
+        for slot in self._free.items():
+            ts = start_ts - self._rng.random() * SYNC_SPREAD_S
+            out.append(Emission(ts, self.meta.lot_id, slot, False, False, sync=True))
         return out
 
     def advance(self, until: float, burst: float = 1.0) -> list[Emission]:

@@ -74,6 +74,8 @@ class WindowResult(BaseModel):
     exits: int
     unique_vehicles_est: float
     closed: bool
+    # Occupied slots right now; only set on open-window results (None once closed).
+    current_occupied: int | None = None
     emitted_at: AwareDatetime
     # Wall-clock time the newest contributing event was produced; drives e2e latency.
     latest_ingest_ts: AwareDatetime | None = None
@@ -104,6 +106,16 @@ class Alert(BaseModel):
     ts: AwareDatetime
     message: str
     occupancy_pct: float | None = None
+
+
+class LateEvent(BaseModel):
+    """On `parking.late`: an event whose window had already closed."""
+
+    event: ParkingEvent
+    window_start: AwareDatetime
+    watermark: AwareDatetime
+    late_by_s: float
+    routed_at: AwareDatetime
 
 
 class DeadLetter(BaseModel):

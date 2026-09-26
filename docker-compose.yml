@@ -24,6 +24,14 @@ x-kafka-env: &kafka-env
   KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 3000
   KAFKA_HEAP_OPTS: -Xms512m -Xmx512m
 
+x-app: &app
+  build: .
+  image: smart-parking:local
+  env_file: .env
+  restart: unless-stopped
+  depends_on:
+    init: {condition: service_completed_successfully}
+
 services:
   kafka-1:
     <<: *kafka-broker
@@ -73,6 +81,15 @@ services:
     volumes: ["./infra/create_topics.sh:/create_topics.sh:ro"]
     entrypoint: ["/bin/bash", "/create_topics.sh"]
     restart: "no"
+
+  processor:
+    <<: *app
+    command: ["python", "-m", "processor.main"]
+    stop_grace_period: 30s
+
+  simulator:
+    <<: *app
+    command: ["python", "-m", "simulator.main", "--speed", "1"]
 
 volumes:
   kafka-1-data:
