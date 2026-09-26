@@ -103,12 +103,10 @@ def step(processors: int, offered: int) -> Row:
 
     drained = c.wait_until(lambda: c.raw_backlog()[0] == 0, DRAIN_TIMEOUT_S, 1)
     drain_s = drained if drained is not None else -1.0
-    # Throughput = events consumed per second over the period from the first event to the moment the
-    # backlog cleared (or the end of the hold if it never did): what the processors actually sustained.
+    # Sustained throughput: every produced event divided by the time from the first event until the
+    # backlog cleared (the hold plus the drain). With no backlog left this equals the produced rate.
     consumed_rate = (
-        delivered / max(HOLD_S, load_seconds + (drain_s if drain_s >= 0 else 0))
-        if drain_s >= 0
-        else max(0.0, consumed_during) / load_seconds
+        delivered / (HOLD_S + drain_s) if drain_s >= 0 else max(0.0, consumed_during) / load_seconds
     )
     time.sleep(6)  # let Prometheus scrape the final counters
     window = int(load_seconds) + 10

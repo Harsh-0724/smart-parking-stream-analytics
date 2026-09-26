@@ -90,23 +90,9 @@ Every item below was found by executing the system (or by reviewing code that ha
 | 9 | Measurement | "Graceful stop" of a broker reports a 1.7 s election because the broker hands off leadership before exiting; a crash takes 9 s. | Broker scenario. | The scenario defaults to SIGKILL and keeps the graceful run as a labelled data point. |
 | 10 | Measurement | The first latency metric measured the age of a quiet window's last occupancy event (p95 29 s). | Prometheus check. | Per-event ingest-to-emit sampling (D18). |
 | 11 | Demo | Rebuilding images mid-run recreated the simulator and processors with a fresh clock; a restart with a different `--start` leaves processors with a stale watermark. | Frontend session. | `make demo-reset`; the first pre-demo step in DEMO.md. |
+| 12 | Processor | Checkpoint size grew with the event rate (every event id, heartbeats included, kept for 300 s and written into each lot's checkpoint) until it exceeded Kafka's 1 MB message limit at 25,000 events/s: the processors refused to checkpoint and crash-looped. | Load test (the chaos drills never reach that rate). | De-duplicate only state-changing events; `max.message.bytes` 16 MB on `state.changelog`; unit test that heartbeat ids are not remembered. |
 
 ## Phase 8: chaos runs (appended by scripts/chaos_*.py)
-
-### Processor crash: PASS (2026-09-26 16:00 UTC)
-SIGKILL one of 2 processors at ~35 s of a 90 s run (speed 60)
-
-| Result | Expectation | Measured |
-|---|---|---|
-| PASS | survivor assigned the 3 orphaned partitions within 30 s | 11.5 s |
-| PASS | state restored from state.changelog | 6 lots restored |
-| PASS | consumer lag drains to 0 | 5 s |
-| PASS | no gaps: every closed window is in the database | missing=0 |
-| PASS | no wrong values vs ground truth | 204 windows compared, 0 mismatches |
-| PASS | no duplicate rows | 228 rows / 228 keys |
-
-- takeover time (kill to partitions assigned): 11.5 s
-- simulator events sent: 130499
 
 ### Sink outage: PASS (2026-09-26 16:05 UTC)
 stop TimescaleDB for 60 s at ~30 s of a 120 s run (speed 60)
@@ -136,20 +122,6 @@ stop TimescaleDB for 60 s at ~30 s of a 120 s run (speed 60)
 | PASS | valid data unaffected: windows match ground truth | 192 windows compared, 0 mismatches, 0 missing |
 
 - messages sent / malformed: 136959 / 6482
-
-### Late and duplicate data: PASS (2026-09-26 16:12 UTC)
---late-pct 10 --dup-pct 5, in-grace (A) and beyond-grace (B) delays
-
-| Result | Expectation | Measured |
-|---|---|---|
-| PASS | A: every duplicate dropped | sent 7314, dropped 7314 |
-| PASS | A: nothing late enough for parking.late | late=0, 98 events were delayed |
-| PASS | A: in-grace late events land in the right windows (matches ground truth) | 228 windows compared, 0 mismatches, 0 missing |
-| PASS | B: every duplicate dropped | sent 7208, dropped 7208 |
-| PASS | B: beyond-grace events routed to parking.late | 29 routed of 87 delayed (the rest were inside the grace period) |
-| PASS | B: every parking.late record is past its window's close time | 29 records |
-
-- B: worst lateness recorded: 527 s behind the watermark
 
 ### Measurement notes from developing the lag-spike scenario
 Five earlier runs were discarded because the method, not the pipeline, was wrong. They are recorded because each is a methodology lesson for the paper:
@@ -222,22 +194,64 @@ HyperLogLog p=10: 1,024 bytes of registers, theoretical standard error 3.25%. Ex
 | 100,000 | 5 | 3.78% | 5.43% | 9,663 KiB | 1 KiB |
 | 1,000,000 | 2 | 4.26% | 7.57% | 88,432 KiB | 1 KiB |
 
-### Load test: ramp at 1, 2 and 3 processors (2026-09-26 18:16 UTC)
-`make load-test`. 30 s per step, valid events at an exact offered rate (30% OCCUPANCY, 70% HEARTBEAT, 12 lots x 200 slots, production producer settings), event time = wall time. Generator and stack share one machine (10 CPUs, Docker Desktop), so figures are a lower bound. Backlog = `parking.raw` end offsets minus events consumed. Latency is ingest-to-emit from Prometheus (sampled 1 in 8 events); the 5 s emit interval sets its floor. Charts: `docs/loadtest/load_test.png`, data: `docs/loadtest/load_test.csv`.
+### Load test: ramp at 1, 2 and 3 processors (2026-09-26, `make load-test`)
+30 s per step, valid events at an exact offered rate (30% OCCUPANCY, 70% HEARTBEAT, 12 lots x 200 slots, production producer settings: idempotent, `acks=all`, lz4), event time = wall time. Generator and stack share one 10-CPU machine (Docker Desktop), so figures are a lower bound. Backlog = `parking.raw` end offsets minus events the processors report consuming. Latency = ingest-to-emit from Prometheus (1 in 8 events sampled). Data: `docs/loadtest/load_test.csv`; chart: `docs/loadtest/load_test.png`.
 
-| Processors | Offered/s | Produced/s | Consumed/s | p50 | p95 | p99 | Backlog at end | Drain | Processor CPU | |
-|---|---|---|---|---|---|---|---|---|---|---|
-| 1 | 1,000 | 1,001 | 878 | 2.8 s | 5.0 s | 8.8 s | 0 | 1 s | 5% |  |
-| 1 | 5,000 | 5,008 | 4,563 | 2.7 s | 4.9 s | 7.9 s | 0 | 1 s | 9% |  |
-| 1 | 10,000 | 10,007 | 8,934 | 2.6 s | 4.8 s | 6.6 s | 0 | 1 s | 16% |  |
-| 1 | 25,000 | 25,028 | -14,480 | nan s | nan s | nan s | 1,192,332 | n/a | 1% | saturated |
-| 2 | 1,000 | 1,002 | 858 | 2.6 s | 4.9 s | 8.4 s | 0 | 1 s | 5% |  |
-| 2 | 5,000 | 5,008 | 4,439 | 2.7 s | 4.9 s | 8.4 s | 0 | 1 s | 11% |  |
-| 2 | 10,000 | 10,008 | 9,519 | 2.6 s | 4.8 s | 6.5 s | 0 | 1 s | 20% |  |
-| 2 | 25,000 | 25,024 | -13,930 | nan s | nan s | nan s | 1,231,261 | n/a | 1% | saturated |
-| 3 | 1,000 | 1,001 | 947 | 2.6 s | 4.9 s | 8.0 s | 0 | 1 s | 7% |  |
-| 3 | 5,000 | 5,005 | 4,786 | 2.6 s | 4.9 s | 8.5 s | 0 | 1 s | 14% |  |
-| 3 | 10,000 | 10,012 | 9,713 | 2.6 s | 4.9 s | 8.3 s | 0 | 1 s | 23% |  |
-| 3 | 25,000 | 25,020 | -15,407 | nan s | nan s | nan s | 1,231,140 | n/a | 53% | saturated |
+| Processors | Offered/s | Produced/s | Sustained/s | p50 | p95 | p99 | Backlog at end of hold | Drain after hold | Processor CPU (indicative) |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 | 1,000 | 1,001 | 969 | 2.7 s | 4.9 s | 8.5 s | 0 | 1 s | 2% |
+| 1 | 5,000 | 5,008 | 4,842 | 2.5 s | 4.8 s | 7.0 s | 0 | 1 s | 8% |
+| 1 | 10,000 | 10,014 | 9,697 | 2.5 s | 4.8 s | 6.4 s | 0 | 1 s | 11% |
+| 1 | 25,000 | 25,023 | 24,202 | 2.5 s | 4.8 s | 5.5 s | 0 | 1 s | 22% |
+| 1 | 50,000 | 50,067 | 48,453 | 2.6 s | 4.8 s | 5.7 s | 0 | 1 s | 33% |
+| 1 | 100,000 | 100,126 | 97,066 | 2.6 s | 4.8 s | 6.5 s | 0 | 1 s | 45% |
+| 2 | 1,000 | 1,001 | 967 | 2.6 s | 4.9 s | 7.8 s | 0 | 1 s | 6% |
+| 2 | 5,000 | 5,005 | 4,832 | 2.7 s | 4.9 s | 8.5 s | 0 | 1 s | 10% |
+| 2 | 10,000 | 10,010 | 9,665 | 2.7 s | 4.9 s | 7.5 s | 0 | 1 s | 14% |
+| 2 | 25,000 | 25,026 | 24,168 | 2.5 s | 4.8 s | 5.3 s | 0 | 1 s | 21% |
+| 2 | 50,000 | 50,051 | 48,142 | 2.6 s | 4.8 s | 6.5 s | 0 | 1 s | 30% |
+| 2 | 100,000 | 100,107 | 96,667 | 2.5 s | 4.8 s | 5.0 s | 0 | 1 s | 58% |
+| 3 | 1,000 | 1,002 | 964 | 2.6 s | 4.9 s | 7.8 s | 0 | 1 s | 7% |
+| 3 | 5,000 | 5,006 | 4,800 | 2.7 s | 4.9 s | 8.6 s | 0 | 1 s | 10% |
+| 3 | 10,000 | 10,009 | 9,652 | 2.7 s | 4.9 s | 8.5 s | 0 | 1 s | 13% |
+| 3 | 25,000 | 25,019 | 24,015 | 2.6 s | 4.8 s | 6.8 s | 0 | 1 s | 20% |
+| 3 | 50,000 | 50,053 | 48,175 | 2.5 s | 4.8 s | 5.7 s | 0 | 1 s | 39% |
+| 3 | 100,000 | 100,113 | 96,379 | 2.5 s | 4.8 s | 5.0 s | 0 | 1 s | 62% |
 
-HyperLogLog accuracy and memory (worst error 7.57% at 1M vehicles against a 9.75% limit; 1 KiB per window versus 88 MB for an exact set) is in the section above.
+What the numbers say, and what they do not:
+- **Throughput:** every processor count kept up with every offered rate up to **100,000 events/s** (backlog 0 at the end of each 30 s hold, drained within about 1 to 2 s), so the ramp did **not** reach a saturation point with 1, 2 or 3 processors. A single processor sustained about 100,000 events/s of this mix on this machine. The largest event source in this project (12 lots) is therefore far below what one processor can absorb.
+- **Scaling from 1 to 3 processors is not visible here** because one processor is never the bottleneck at these rates; the scaling evidence is the lag-spike drill above (drain rate 142k to 293k events/s, 2.06x, with a 2.6M-event backlog). Partition count (6) and the skew of real lot IDs bound the parallelism.
+- **Latency is flat, about 4.8 s p95 and 2.5 s p50, at every rate.** It is set by the 5 s emit interval (`EMIT_INTERVAL_S`), not by load; it would only rise if the processors fell behind. Lowering the emit interval lowers the floor.
+- **CPU** is `docker stats` summed over processor containers, sampled once mid-hold; treat it as indicative only (one sample, and it under-reports short bursts).
+- HyperLogLog accuracy and memory (worst error 7.57% at 1,000,000 vehicles against a 9.75% bound; 1 KiB per window versus 88 MB for an exact set) is recorded in the HLL section above and is not repeated here.
+
+**A first run of this test crashed the processors at 25,000 events/s and is not reported as a result.** The processor remembered every event id (heartbeats included) for 300 s of event time and wrote that set into each lot's checkpoint. At 25,000 events/s a lot's checkpoint exceeded Kafka's 1 MB message limit (`MSG_SIZE_TOO_LARGE`); the processor then correctly refused to checkpoint and crash-looped, and consumed counters went backwards. Fixed by de-duplicating only state-changing events (a re-processed heartbeat is idempotent) and raising `max.message.bytes` on `state.changelog` to 16 MB (DECISIONS D27, bug #12 below).
+
+### Late and duplicate data: PASS (2026-09-26 18:39 UTC)
+--late-pct 10 --dup-pct 5, in-grace (A) and beyond-grace (B) delays
+
+| Result | Expectation | Measured |
+|---|---|---|
+| PASS | A: every duplicate dropped | sent 29, dropped 29 |
+| PASS | A: nothing late enough for parking.late | late=0, 74 events were delayed |
+| PASS | A: in-grace late events land in the right windows (matches ground truth) | 216 windows compared, 0 mismatches, 0 missing |
+| PASS | B: every duplicate dropped | sent 31, dropped 31 |
+| PASS | B: beyond-grace events routed to parking.late | 40 routed of 77 delayed (the rest were inside the grace period) |
+| PASS | B: every parking.late record is past its window's close time | 40 records |
+
+- B: worst lateness recorded: 523 s behind the watermark
+
+### Processor crash: PASS (2026-09-26 18:42 UTC)
+SIGKILL one of 2 processors at ~35 s of a 90 s run (speed 60)
+
+| Result | Expectation | Measured |
+|---|---|---|
+| PASS | survivor assigned the 3 orphaned partitions within 30 s | 10.4 s |
+| PASS | state restored from state.changelog | 6 lots restored |
+| PASS | consumer lag drains to 0 | 5 s |
+| PASS | no gaps: every closed window is in the database | missing=0 |
+| PASS | no wrong values vs ground truth | 192 windows compared, 0 mismatches |
+| PASS | no duplicate rows | 228 rows / 228 keys |
+
+- takeover time (kill to partitions assigned): 10.4 s
+- simulator events sent: 130374
