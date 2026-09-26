@@ -1,16 +1,41 @@
 name: ci
+
 on:
   push:
   pull_request:
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   lint-type-test:
+    name: ruff + mypy + pytest
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
-      - run: uv sync
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run mypy common processor simulator sink alerter
-      - run: uv run pytest
+      - run: uv run pytest -v
+
+  integration:
+    name: full stack integration (docker compose)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: cp .env.example .env
+      - run: uv sync --frozen
+      # The tests start the whole Compose stack (3 brokers, TimescaleDB, processor, sink, alerter,
+      # Prometheus) through testcontainers, produce a known event set, assert the exact rows in
+      # TimescaleDB, and tear the stack down with its volumes. Logs are printed if a test fails.
+      - run: uv run pytest -m integration -v -s

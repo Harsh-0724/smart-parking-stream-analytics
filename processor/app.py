@@ -214,7 +214,9 @@ class ProcessorApp:
     # ---- outputs --------------------------------------------------------------------------------
 
     def _publish_closed(self, state: LotState) -> None:
-        self._sync_capacity(state)
+        # A closed result is final, so never emit it with a guessed capacity: look the lot up
+        # now, ignoring the refresh throttle, if its metadata has not been seen yet.
+        self._sync_capacity(state, force=bool(state.closed) and state.capacity == 0)
         for result in state.drain_closed(time.time()):
             self._produce_result(result)
 
@@ -315,9 +317,9 @@ class ProcessorApp:
         self._metadata = load_metadata(self._s.kafka_bootstrap)
         self._metadata_loaded_at = time.monotonic()
 
-    def _sync_capacity(self, state: LotState) -> None:
+    def _sync_capacity(self, state: LotState, force: bool = False) -> None:
         if state.capacity == 0:
-            self._refresh_metadata()
+            self._refresh_metadata(force=force)
         meta = self._metadata.get(state.lot_id)
         if meta is not None:
             state.capacity = meta.capacity
