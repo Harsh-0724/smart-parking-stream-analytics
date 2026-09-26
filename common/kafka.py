@@ -14,6 +14,7 @@ def producer_config(bootstrap: str, client_id: str) -> dict[str, Any]:
         "enable.idempotence": True,
         "acks": "all",
         "compression.type": "lz4",
+        "partitioner": "murmur2_random",  # Java-compatible, matches common.partitioning
         "linger.ms": 20,
         "batch.num.messages": 10000,
     }
