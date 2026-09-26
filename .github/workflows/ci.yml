@@ -10,7 +10,7 @@ concurrency:
 
 jobs:
   backend:
-    name: backend: ruff + mypy + pytest
+    name: "backend: ruff + mypy + pytest"
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -25,7 +25,7 @@ jobs:
       - run: uv run pytest -v
 
   integration:
-    name: backend: full stack integration (docker compose)
+    name: "backend: full stack integration (docker compose)"
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -41,7 +41,7 @@ jobs:
       - run: uv run pytest -m integration -v -s
 
   frontend:
-    name: frontend: types + lint + tests + build
+    name: "frontend: types + lint + tests + build"
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
@@ -65,7 +65,7 @@ jobs:
       - run: pnpm check:bundle
 
   e2e:
-    name: frontend: Playwright smoke test on the live stack
+    name: "frontend: Playwright smoke test on the live stack"
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -98,7 +98,7 @@ jobs:
         run: docker compose down -v
 
   images:
-    name: images: build and push to GHCR
+    name: "images: build and push to GHCR"
     needs: [backend, integration, frontend, e2e]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
@@ -141,7 +141,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
 
   deploy:
-    name: deploy: SSH and compose up
+    name: "deploy: SSH and compose up"
     needs: images
     # Runs only once a VM is configured (repository variable DEPLOY_ENABLED=true plus the secrets
     # DEPLOY_HOST, DEPLOY_USER and DEPLOY_SSH_KEY); see docs/DEPLOY.md.
