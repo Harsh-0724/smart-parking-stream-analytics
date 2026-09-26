@@ -66,7 +66,7 @@ ADR-style log. Decisions already fixed in `CLAUDE.md` (Python 3.12, confluent-ka
 - **Unique vehicles** use HyperLogLog p=10 (1 KiB per window, 3.25% standard error), serialised as registers inside the checkpoint.
 
 ## D14. Metrics
-- Latency is measured as wall-clock `ingest_ts -> emit`, not `event_ts -> emit`: with `--speed > 1` or replay, `event_ts` is on the simulated timeline and the difference would be meaningless.
+- The emit latency (the windowed-emit latency; raw ingestion latency was added later, see D28) is measured as wall-clock `ingest_ts -> emit`, not `event_ts -> emit`: with `--speed > 1` or replay, `event_ts` is on the simulated timeline and the difference would be meaningless.
 - Metrics are per-instance on `:8000` (Prometheus scrapes each replica); no `lot` label to keep cardinality flat.
 
 ## D15. Sensor-offline alerts are produced by the processor
@@ -129,7 +129,7 @@ ADR-style log. Decisions already fixed in `CLAUDE.md` (Python 3.12, confluent-ka
 - Provisioned entirely from files (`infra/grafana/provisioning`, `infra/grafana/dashboards/pipeline-health.json`): a Prometheus datasource and one "Pipeline health" dashboard covering brokers, under-replicated partitions, rebalances, processor instances, consumer lag, throughput, latency percentiles, DLQ/late/duplicate rates, checkpoint duration, sink rows and topic sizes. It is for operators; the product UI is the custom frontend.
 
 ## D26. Load-test method
-- `scripts/loadgen.py` produces valid events at an exact rate (idempotent, `acks=all`, lz4; 30% OCCUPANCY, 70% HEARTBEAT; event time = wall time) because the synthetic simulator tops out near 19,000 events/s. `scripts/load_test.py` runs each rate for 30 s at 1, 2 and 3 processors and records produced and consumed rate, backlog (end offsets minus events consumed), processor CPU and ingest-to-emit percentiles from Prometheus. Generator and stack share the machine, so results are a lower bound.
+- `scripts/loadgen.py` produces valid events at an exact rate (idempotent, `acks=all`, lz4; 30% OCCUPANCY, 70% HEARTBEAT; event time = wall time) because the synthetic simulator tops out near 19,000 events/s. `scripts/load_test.py` runs each rate for 30 s at 1, 2 and 3 processors and records produced and consumed rate, backlog (end offsets minus events consumed), processor CPU and windowed-emit latency percentiles from Prometheus. Generator and stack share the machine, so results are a lower bound.
 
 ## D27. Only state-changing events are de-duplicated; checkpoints may be large
 - **Found by the load test:** remembering every event id for 300 s of event time made a lot's checkpoint grow linearly with its event rate until it exceeded Kafka's default 1 MB message limit (at 25,000 events/s over 12 lots), which crash-looped the processors.
