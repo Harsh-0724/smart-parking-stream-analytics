@@ -1,4 +1,4 @@
-.PHONY: up down clean topics lint type test test-integration fmt sync fetch-data reset-topics chaos chaos-broker chaos-processor chaos-sink chaos-bad-data chaos-late-dup chaos-lag hll-accuracy
+.PHONY: up down clean topics lint type test test-integration fmt sync fetch-data reset-topics chaos chaos-broker chaos-processor chaos-sink chaos-bad-data chaos-late-dup chaos-lag hll-accuracy demo-reset
 
 COMPOSE ?= docker compose
 # Host-side tools reach the brokers through the EXTERNAL listeners.
@@ -10,7 +10,7 @@ sync:
 
 up:
 	@test -f .env || cp .env.example .env
-	$(COMPOSE) up -d --wait --remove-orphans
+	$(COMPOSE) up -d --build --wait --remove-orphans
 
 down:
 	$(COMPOSE) down
@@ -58,3 +58,11 @@ chaos: chaos-broker chaos-processor chaos-sink chaos-bad-data chaos-late-dup cha
 
 hll-accuracy:
 	uv run python scripts/hll_accuracy.py
+
+# Event-time state must not survive between runs that use different simulator start times:
+# a stale watermark would classify every new event as late. Run this before every demo.
+demo-reset:
+	$(MAKE) reset-topics
+	$(COMPOSE) exec -T timescaledb psql -U $${POSTGRES_USER:-parking} -d $${POSTGRES_DB:-parking} -qc "truncate lot_occupancy_5min, alerts, lot_metadata"
+	$(COMPOSE) up -d --build --wait --remove-orphans
+	$(COMPOSE) restart api

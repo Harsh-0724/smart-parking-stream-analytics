@@ -18,6 +18,7 @@ from simulator.lotsim import LotSim
 
 LOCAL_TZ = ZoneInfo("Asia/Kolkata")
 PERSONALITIES = ("office", "mall", "station")
+PERSONALITY_SLOTS = {"office": 120, "mall": 240, "station": 90}
 LOT_NAMES = {"office": "Tech Park", "mall": "Galleria Mall", "station": "Metro Station"}
 SLOTS_PER_ROW = 20
 SYNC_SPREAD_S = 5.0
@@ -41,19 +42,26 @@ def slot_ids(count: int) -> list[str]:
 
 class SyntheticSource:
     def __init__(
-        self, n_lots: int, slots_per_lot: int, start_ts: float, seed: int, salt: str
+        self,
+        n_lots: int,
+        slots_per_lot: int,
+        start_ts: float,
+        seed: int,
+        salt: str,
+        varied_sizes: bool = False,
     ) -> None:
         self.lots: list[LotMetadata] = []
         self._sims: list[LotSim] = []
         lot_ids = balanced_lot_ids(n_lots, topics.RAW_PARTITIONS)
         for i, lot_id in enumerate(lot_ids):
             personality = PERSONALITIES[i % len(PERSONALITIES)]
+            size = PERSONALITY_SLOTS[personality] if varied_sizes else slots_per_lot
             meta = LotMetadata(
                 lot_id=lot_id,
                 name=f"{LOT_NAMES[personality]} {i // len(PERSONALITIES) + 1}",
                 personality=personality,  # type: ignore[arg-type]
-                capacity=slots_per_lot,
-                slot_ids=slot_ids(slots_per_lot),
+                capacity=size,
+                slot_ids=slot_ids(size),
                 columns=SLOTS_PER_ROW,
                 latitude=BASE_LAT + 0.004 * i,
                 longitude=BASE_LON + 0.003 * i,

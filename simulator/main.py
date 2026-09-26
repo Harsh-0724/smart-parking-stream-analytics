@@ -18,7 +18,7 @@ from common.kafka import producer_config
 from common.logging import configure_logging
 from simulator.faults import FaultConfig, FaultInjector
 from simulator.faults import Message as OutMessage
-from simulator.source import ReplaySource, Source, SyntheticSource
+from simulator.source import LOCAL_TZ, ReplaySource, Source, SyntheticSource
 from simulator.truth import TruthTracker
 
 TICK_S = 0.05
@@ -39,6 +39,14 @@ def parse_args() -> argparse.Namespace:
         "--slots-per-lot", type=int, default=int(os.environ.get("SIM_SLOTS_PER_LOT", 60))
     )
     p.add_argument("--start", default=None, help="synthetic start, ISO-8601 UTC; default now")
+    p.add_argument(
+        "--start-local-hour", type=float, default=None,
+        help="start today at this Asia/Kolkata hour (e.g. 6 = morning ramp); near wall-clock so "
+        "retention and 'recent' queries keep working",
+    )  # fmt: skip
+    p.add_argument(
+        "--varied-sizes", action="store_true", help="office/mall/station = 120/240/90 slots"
+    )
     p.add_argument("--dataset", type=Path, default=Path("data/dataset.csv"))
     p.add_argument("--replay-scale", type=float, default=0.1, help="capacity scale for replay")
     p.add_argument("--replay-days", type=float, default=3.0)
@@ -69,7 +77,9 @@ def build_source(args: argparse.Namespace, start_ts: float) -> Source:
         return ReplaySource(
             args.dataset, start_ts, args.seed, salt, args.replay_scale, args.replay_days, args.lots
         )
-    return SyntheticSource(args.lots, args.slots_per_lot, start_ts, args.seed, salt)
+    return SyntheticSource(
+        args.lots, args.slots_per_lot, start_ts, args.seed, salt, varied_sizes=args.varied_sizes
+    )
 
 
 def parse_dropouts(specs: list[str]) -> frozenset[tuple[str | None, str]]:
@@ -122,7 +132,11 @@ def main() -> None:
         or os.environ.get("KAFKA_BOOTSTRAP_HOST")
         or os.environ.get("KAFKA_BOOTSTRAP", "localhost:19092")
     )
-    start_ts = datetime.fromisoformat(args.start).timestamp() if args.start else time.time()
+    if args.start_local_hour is not None:
+        today = datetime.now(LOCAL_TZ).replace(hour=0, minute=0, second=0, microsecond=0)
+        start_ts = today.timestamp() + args.start_local_hour * 3600
+    else:
+        start_ts = datetime.fromisoformat(args.start).timestamp() if args.start else time.time()
     source = build_source(args, start_ts)
     rng = random.Random(args.seed + 1)
     faults = FaultInjector(

@@ -105,6 +105,8 @@ services:
     <<: *app
     command: ["python", "-m", "processor.main"]
     stop_grace_period: 30s
+    deploy:
+      replicas: 2  # two instances so a live rebalance can be shown; chaos scripts override this
 
   sink:
     <<: *app
@@ -118,6 +120,22 @@ services:
     <<: *app
     command: ["python", "-m", "alerter.main"]
     stop_grace_period: 15s
+
+  api:
+    <<: *app
+    command: ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8080"]
+    environment:
+      PROMETHEUS_URL: http://prometheus:9090
+    ports: ["8080:8080"]
+    depends_on:
+      init: {condition: service_completed_successfully}
+      timescaledb: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8080/api/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
 
   kafka-exporter:
     image: danielqsj/kafka-exporter:v1.8.0
@@ -143,7 +161,15 @@ services:
 
   simulator:
     <<: *app
-    command: ["python", "-m", "simulator.main", "--speed", "1"]
+    command:
+      - python
+      - -m
+      - simulator.main
+      - --speed
+      - ${SIM_SPEED:-20}
+      - --start-local-hour
+      - ${SIM_START_HOUR:-6}
+      - --varied-sizes
 
 volumes:
   kafka-1-data:

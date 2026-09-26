@@ -10,6 +10,9 @@ dependencies = [
     "prometheus-client>=0.21",
     "structlog>=24.4",
     "psycopg[binary]>=3.2",
+    "fastapi>=0.141.1",
+    "uvicorn[standard]>=0.54.0",
+    "psycopg-pool>=3.3.3",
 ]
 
 [dependency-groups]
@@ -22,7 +25,7 @@ dev = [
 ]
 
 [tool.setuptools]
-packages = ["common", "simulator", "processor", "sink", "alerter"]
+packages = ["common", "simulator", "processor", "sink", "alerter", "api"]
 
 [tool.ruff]
 line-length = 100

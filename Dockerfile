@@ -9,5 +9,6 @@ COPY simulator simulator
 COPY processor processor
 COPY sink sink
 COPY alerter alerter
+COPY api api
 ENV PATH="/app/.venv/bin:$PATH" PYTHONPATH=/app
 CMD ["python", "-m", "processor.main"]
