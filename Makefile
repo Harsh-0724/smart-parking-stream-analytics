@@ -30,7 +30,7 @@ fmt:
 	uv run ruff format .
 
 type:
-	uv run mypy common processor simulator sink alerter
+	uv run mypy common processor simulator sink alerter api
 
 test:
 	uv run pytest

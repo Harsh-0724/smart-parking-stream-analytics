@@ -99,3 +99,24 @@ def test_truth_tracker_time_weighted_average() -> None:
         ]
     )
     assert t._area[("L", 1000)] == 150.0
+
+
+def test_every_flag_the_compose_file_passes_to_the_simulator_parses(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """argparse.Namespace attributes are invisible to mypy, so check the real command line."""
+    import re
+    import sys
+    from pathlib import Path
+
+    from simulator.main import parse_args
+
+    compose = (Path(__file__).resolve().parents[2] / "docker-compose.yml").read_text()
+    block = compose.split("simulator.main", 1)[1].split("\n\n", 1)[0]
+    flags = re.findall(r"^\s+- (--[a-z-]+|[\w.$:{}-]+)\s*$", block, flags=re.M)
+    argv = ["simulator"] + [
+        f.replace("${SIM_SPEED:-20}", "20").replace("${SIM_START_HOUR:-6}", "6") for f in flags
+    ]
+    monkeypatch.setattr(sys, "argv", argv)
+    args = parse_args()
+    assert (
+        args.skip_weekend and args.varied_sizes and args.start_local_hour == 6 and args.speed == 20
+    )

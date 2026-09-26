@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[2]
 BOOTSTRAP = "localhost:19092,localhost:29092,localhost:39092"
 SERVICES = [
     "kafka-1", "kafka-2", "kafka-3", "init", "timescaledb",
-    "processor", "sink", "alerter", "kafka-exporter", "prometheus",
+    "processor", "sink", "alerter", "api", "kafka-exporter", "prometheus",
 ]  # fmt: skip
 
 

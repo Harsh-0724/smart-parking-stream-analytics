@@ -1,4 +1,4 @@
-from api.live import Batch, Hub, SlotStore
+from api.live import Batch, Hub, SlotStore, parse_slot_event
 from api.main import TtlCache
 from api.models import ConsumerGroupInfo, GroupMember
 from api.pipeline import PipelineCollector
@@ -94,3 +94,21 @@ def test_rebalance_detection_reports_start_and_finish() -> None:
     collector._detect_rebalance(_group("Stable", {"a": ["t[0]", "t[1]", "t[2]"]}))
     texts = [e.description for e in collector.rebalances]
     assert texts[0] == "rebalance started" and texts[1].startswith("rebalance finished: a holds 3")
+
+
+def test_parse_slot_event_accepts_occupancy_and_ignores_everything_else() -> None:
+    good = (
+        b'{"event_type":"OCCUPANCY","lot_id":"L","slot_id":"A-1","status":"OCCUPIED",'
+        b'"event_ts":"2026-01-05T10:00:00+00:00"}'
+    )
+    assert parse_slot_event(good) == ("L", "A-1", True, 1767607200.0)
+    assert parse_slot_event(b'{"event_type":"HEARTBEAT","lot_id":"L"}') is None
+    # malformed messages (what --malformed-pct injects) must not raise
+    for bad in (
+        b"not json OCCUPANCY",
+        b'{"event_type":"OCCUPANCY"',
+        b'{"event_type":"OCCUPANCY","lot":"L","status":"OCCUPIED"}',
+        b'{"event_type":"OCCUPANCY","lot_id":"L","slot_id":"A","status":"BROKEN","event_ts":"x"}',
+        b'{"event_type":"OCCUPANCY","lot_id":"L","slot_id":"A","status":"FREE","event_ts":"nope"}',
+    ):
+        assert parse_slot_event(bad) is None

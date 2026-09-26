@@ -7,7 +7,7 @@ import random
 import signal
 import time
 from collections import Counter
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from types import FrameType
 
@@ -44,6 +44,11 @@ def parse_args() -> argparse.Namespace:
         help="start today at this Asia/Kolkata hour (e.g. 6 = morning ramp); near wall-clock so "
         "retention and 'recent' queries keep working",
     )  # fmt: skip
+    p.add_argument(
+        "--skip-weekend",
+        action="store_true",
+        help="with --start-local-hour: if today is Sat/Sun, start on the coming Monday",
+    )
     p.add_argument(
         "--varied-sizes", action="store_true", help="office/mall/station = 120/240/90 slots"
     )
@@ -134,6 +139,8 @@ def main() -> None:
     )
     if args.start_local_hour is not None:
         today = datetime.now(LOCAL_TZ).replace(hour=0, minute=0, second=0, microsecond=0)
+        if args.skip_weekend and today.weekday() >= 5:
+            today += timedelta(days=7 - today.weekday())
         start_ts = today.timestamp() + args.start_local_hour * 3600
     else:
         start_ts = datetime.fromisoformat(args.start).timestamp() if args.start else time.time()

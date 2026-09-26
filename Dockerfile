@@ -11,4 +11,7 @@ COPY sink sink
 COPY alerter alerter
 COPY api api
 ENV PATH="/app/.venv/bin:$PATH" PYTHONPATH=/app
-CMD ["python", "-m", "processor.main"]
+# Which service the image runs by default (Compose overrides `command`; CI builds one image per service).
+ARG RUN_CMD="python -m processor.main"
+ENV RUN_CMD=${RUN_CMD}
+CMD ["sh", "-c", "exec $RUN_CMD"]

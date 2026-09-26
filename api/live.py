@@ -70,6 +70,27 @@ class SlotStore:
         return list(self._state)
 
 
+def parse_slot_event(value: bytes) -> tuple[str, str, bool, float] | None:
+    """(lot, slot, occupied, event_ts) from a raw message, or None for anything that is not a
+    well-formed OCCUPANCY event. Malformed messages go to the DLQ via the processor; the API
+    feed must ignore them, not crash on them."""
+    if b'"OCCUPANCY"' not in value:
+        return None  # heartbeats are the bulk of the traffic; skip them cheaply
+    try:
+        e = json.loads(value)
+        status = e["status"]
+        if status not in ("OCCUPIED", "FREE"):
+            return None
+        return (
+            str(e["lot_id"]),
+            str(e["slot_id"]),
+            status == "OCCUPIED",
+            datetime.fromisoformat(e["event_ts"]).timestamp(),
+        )
+    except (ValueError, KeyError, TypeError):
+        return None
+
+
 class Client:
     """One WebSocket connection: an outbox of messages plus coalesced slot deltas."""
 
@@ -245,21 +266,17 @@ class KafkaFeed(threading.Thread):
                         continue
                     FEED_MESSAGES.labels(topic).inc()
                     if topic == topics.RAW:
-                        if b'"OCCUPANCY"' not in value:
-                            continue  # heartbeats are the bulk of the traffic; skip cheaply
-                        e = json.loads(value)
-                        batch.slots.append(
-                            (
-                                e["lot_id"],
-                                e["slot_id"],
-                                e["status"] == "OCCUPIED",
-                                datetime.fromisoformat(e["event_ts"]).timestamp(),
-                            )
-                        )
-                    elif topic == topics.OCCUPANCY_5MIN:
-                        batch.occupancy.append(json.loads(value))
+                        slot_event = parse_slot_event(value)
+                        if slot_event is not None:
+                            batch.slots.append(slot_event)
                     else:
-                        batch.alerts.append(json.loads(value))
+                        try:
+                            payload = json.loads(value)
+                        except ValueError:
+                            continue
+                        (
+                            batch.occupancy if topic == topics.OCCUPANCY_5MIN else batch.alerts
+                        ).append(payload)
                 if batch:
                     self._loop.call_soon_threadsafe(self._on_batch, batch)
         finally:

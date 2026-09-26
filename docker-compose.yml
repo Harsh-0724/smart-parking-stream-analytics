@@ -137,6 +137,23 @@ services:
       retries: 6
       start_period: 15s
 
+  web:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+    image: smart-parking-web:local
+    restart: unless-stopped
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+    ports: ["8081:80"]
+    depends_on:
+      api: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:80/"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
   kafka-exporter:
     image: danielqsj/kafka-exporter:v1.8.0
     restart: unless-stopped
@@ -159,6 +176,22 @@ services:
       - prometheus-data:/prometheus
     depends_on: [kafka-exporter]
 
+  grafana:
+    image: grafana/grafana:11.3.1
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_SERVER_ROOT_URL: "%(protocol)s://%(domain)s/grafana/"
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    depends_on: [prometheus]
+
   simulator:
     <<: *app
     command:
@@ -169,6 +202,7 @@ services:
       - ${SIM_SPEED:-20}
       - --start-local-hour
       - ${SIM_START_HOUR:-6}
+      - --skip-weekend
       - --varied-sizes
 
 volumes:
@@ -177,3 +211,4 @@ volumes:
   kafka-3-data:
   timescale-data:
   prometheus-data:
+  grafana-data:

@@ -249,3 +249,80 @@ def test_all_pipeline_targets_are_scraped_by_prometheus(stack: dict[str, str]) -
         return {"processor", "sink", "alerter", "kafka-exporter"} <= up
 
     assert _wait(targets_up, timeout=60)
+
+
+def _api(path: str) -> Any:
+    with urllib.request.urlopen(f"http://localhost:8080{path}", timeout=10) as response:  # noqa: S310
+        return json.load(response)
+
+
+def test_api_serves_pipeline_output_and_survives_malformed_messages(
+    bootstrap: str, dsn: str
+) -> None:
+    import asyncio
+
+    import websockets
+
+    lot = f"LOT-API-{uuid4().hex[:6]}"
+    t = int(time.time()) // WINDOW_S * WINDOW_S - 1800
+    e = lambda n, off, slot, status, token=None: _event(lot, n, t + off, slot, status, token)  # noqa: E731
+
+    assert _wait(lambda: _api("/api/health")["kafka_feed"], timeout=60)
+
+    first = [
+        e("f1", 0, "A-001", "FREE"),
+        e("f2", 0, "A-002", "FREE"),
+        e("f3", 0, "A-003", "FREE"),
+        e("o1", 60, "A-001", "OCCUPIED", "tokA"),
+        e("o2", 120, "A-002", "OCCUPIED", "tokB"),
+        e("hb", 800, "A-009", None),  # closes the first window
+    ]
+    _send(bootstrap, lot, first, _metadata(lot, capacity=10))
+
+    _wait(
+        lambda: (
+            psycopg.connect(dsn)
+            .execute("SELECT 1 FROM lot_occupancy_5min WHERE lot_id=%s AND closed", (lot,))
+            .fetchone()
+        ),
+    )
+
+    mine = _wait(lambda: {x["lot_id"]: x for x in _api("/api/lots")}.get(lot))  # cached for 2 s
+    assert mine["capacity"] == 10 and mine["name"] == lot
+
+    history = _wait(lambda: _api(f"/api/lots/{lot}/history")["points"])
+    assert any(p["closed"] for p in history)
+    assert history[0]["entries"] == 2  # A-001 and A-002 entered in window 1
+
+    async def watch() -> dict[str, bool]:
+        async with websockets.connect("ws://localhost:8080/ws") as ws:
+            await ws.send(json.dumps({"type": "subscribe", "lots": [lot]}))
+            snapshot: dict[str, Any] = {}
+            deadline = time.monotonic() + 30
+            while time.monotonic() < deadline and not snapshot:
+                message = json.loads(await asyncio.wait_for(ws.recv(), 10))
+                if message["type"] == "snapshot" and message["lot_id"] == lot and message["slots"]:
+                    snapshot = {s["slot_id"]: s["occupied"] for s in message["slots"]}
+            assert snapshot, "no slot snapshot received"
+            # A malformed message, then a valid event: the feed must survive the first
+            producer = Producer(producer_config(bootstrap, "integration-test-2"))
+            producer.produce(
+                topics.RAW, key=lot.encode(), value=b'{"event_type":"OCCUPANCY" broken'
+            )
+            producer.produce(
+                topics.RAW, key=lot.encode(), value=e("o3", 900, "A-003", "OCCUPIED", "tokC")
+            )
+            producer.flush(30)
+            deadline = time.monotonic() + 30
+            while time.monotonic() < deadline:
+                message = json.loads(await asyncio.wait_for(ws.recv(), 10))
+                if message["type"] == "slots" and message["lot_id"] == lot:
+                    for d in message["deltas"]:
+                        snapshot[d["slot_id"]] = d["occupied"]
+                    if snapshot.get("A-003") is True:
+                        break
+            return snapshot
+
+    state = asyncio.run(watch())
+    assert state["A-001"] is True and state["A-002"] is True and state["A-003"] is True
+    assert _api("/api/health")["kafka_feed"] is True

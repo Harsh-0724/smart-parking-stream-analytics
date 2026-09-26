@@ -1,0 +1,66 @@
+# Production override:  docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# - Only Caddy publishes ports (80, 443). Kafka, TimescaleDB, Prometheus, Grafana and the API are
+#   reachable only on the internal Compose network; Grafana and the API are exposed to users
+#   through Caddy at /grafana/ and /api, /ws.
+# - Images come from GHCR (built by .github/workflows/ci.yml on every push to main).
+# - Secrets come from .env (never committed); a missing one stops the deploy instead of falling
+#   back to a default.
+
+x-ghcr: &ghcr
+  build: !reset null
+  restart: unless-stopped
+
+services:
+  kafka-1: {ports: !reset []}
+  kafka-2: {ports: !reset []}
+  kafka-3: {ports: !reset []}
+  timescaledb:
+    ports: !reset []
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+  prometheus:
+    ports: !reset []
+
+  processor:
+    <<: *ghcr
+    image: ghcr.io/${GHCR_OWNER:?set GHCR_OWNER in .env}/smart-parking-processor:${IMAGE_TAG:-latest}
+  sink:
+    <<: *ghcr
+    image: ghcr.io/${GHCR_OWNER}/smart-parking-sink:${IMAGE_TAG:-latest}
+  alerter:
+    <<: *ghcr
+    image: ghcr.io/${GHCR_OWNER}/smart-parking-alerter:${IMAGE_TAG:-latest}
+  api:
+    <<: *ghcr
+    image: ghcr.io/${GHCR_OWNER}/smart-parking-api:${IMAGE_TAG:-latest}
+    ports: !reset []
+    environment:
+      PROMETHEUS_URL: http://prometheus:9090
+      CORS_ORIGINS: ""
+  # The simulator is the data source of the deployed demo. It reuses the processor image
+  # (all backend code ships in one image) with a different command.
+  simulator:
+    <<: *ghcr
+    image: ghcr.io/${GHCR_OWNER}/smart-parking-processor:${IMAGE_TAG:-latest}
+
+  grafana:
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:?set GRAFANA_PASSWORD in .env}
+
+  web:
+    <<: *ghcr
+    image: ghcr.io/${GHCR_OWNER}/smart-parking-web:${IMAGE_TAG:-latest}
+    ports: !override
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  caddy-data:
+  caddy-config:
