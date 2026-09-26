@@ -134,6 +134,20 @@ E POSTGRES_PASSWORD=abc123      -> exit=1, running=0 | REFUSING TO START: POSTGR
 ```
 `docker compose ps` after a refused start shows every service as `Created` (never `Up`) and only `prod-guard` as `Exited (1)`. With the good `.env` restored, the same command starts cleanly and `prod-guard` prints `secrets are set and none is a known default`.
 
+## Demo rehearsal (2026-09-27)
+`docs/DEMO.md` followed exactly as written (from `make demo-reset`, `SIM_START_HOUR=8`, T0 = reset + 8 min), driven by a script that performed each action at its stated time and read the UI and Kafka. Full timed record: "Rehearsal record" in `docs/DEMO.md`. Screenshots: `docs/screenshots/rehearsal-6-processor-killed.png`, `rehearsal-8-broker-killed.png`, `rehearsal-10-grafana.png`.
+
+| Moment | Measured |
+|---|---|
+| Processor kill to Rebalanced banner | 9.4 s; survivor holds all 6 partitions; state restored from the changelog (`restored_lots ["LOT-01","LOT-04"]`, `resume_offset 137141`) |
+| Restore command to two owners, Stable | 5.1 s; in controlled repeats the survivor revoked only partitions [0, 1, 2] (3 of 6 move) |
+| Broker kill (busiest, kafka-1, 8 of 19 leaders) to Down in the UI | 12.3 s; leaders back on survivors by then; ISR degraded on all 7 topics; 1,179 events/s throughout; Prometheus under-replicated partitions 64 |
+| Same broker kill, processor group | also rebalanced (the killed broker hosted the group coordinator), recovered without any restart |
+| Broker restart to Up | 3.5 s; ISR full within seconds; the restarted broker leads 0 partitions until Kafka's periodic leader rebalance |
+| Final state | health ok, group Stable 2 members (3, 3), 3 brokers, no degraded ISR, late 0, DLQ 0, restart counts 0 |
+
+Found by doing it for real: (1) the banner reads "Rebalanced", not "Rebalancing", and its first text is a transitional "holds 0"; (2) the UI shows a broker as Down about 12 s after the kill, not 9 s; (3) a broker kill also rebalances the processor group; (4) after the restart the broker leads nothing, so the next kill must pick the busiest broker again; (5) **one anomaly not explained:** in the timed run `docker compose up -d --scale processor=2 processor` recreated *both* processor containers (both created at that second), so all 6 partitions changed owner. Two controlled repeats (kill, wait 12 s or 90 s, restore) did not reproduce it: the survivor kept its container and the killed one restarted with the same ID. The system was demoable afterwards either way.
+
 ## Phase 8: chaos runs (appended by scripts/chaos_*.py)
 
 ### Sink outage: PASS (2026-09-26 16:05 UTC)
