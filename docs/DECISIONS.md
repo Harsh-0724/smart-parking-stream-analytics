@@ -78,3 +78,11 @@ ADR-style log. Decisions already fixed in `CLAUDE.md` (Python 3.12, confluent-ka
 - **Database outage:** the batch is kept in memory and retried with backoff (1, 2, 5, 10 s); offsets are not committed, so if the sink itself dies the batch is replayed from Kafka. A 60 s outage is well inside `max.poll.interval.ms` (5 min).
 - Messages that fail validation are skipped and counted (`sink_invalid_messages_total`) instead of crash-looping the sink: these topics are written by our own processor, so a failure means a bug, and stopping the whole sink for one bad record would be worse.
 - Compression policy after 7 days and retention after 90 days on the hypertable; an hourly continuous aggregate over closed windows (real-time aggregation on for the most recent hour). Compression is safe with upserts because windows stop changing minutes after they close.
+
+## D17. Alerter design
+- **Two roles, one process, group `alerter`:** it reads `lot.occupancy.5min` to raise/clear `FULL_LOT` alerts on `lot.alerts`, and reads `lot.alerts` (its own plus the processor's `SENSOR_OFFLINE`) to notify. Every alert reaches the notifier through one path.
+- **Hysteresis:** raise at `>= ALERT_FULL_THRESHOLD` (0.90), clear at `<= ALERT_CLEAR_THRESHOLD` (0.85), nothing in between. The occupancy used is the instantaneous `current_occupied / capacity` on open-window results (the 5-minute *average* would lag by minutes), and results older than the last one handled for that lot are ignored (windows of one lot can arrive out of order across the 3 result partitions).
+- **Restart safety:** on start the active-alert set is rebuilt from `lot.alerts` (RAISED without a later CLEARED). Alerts are flushed before the occupancy offsets that caused them are committed, so a crash re-derives them from restored state instead of duplicating them.
+- **Single instance.** A lot's results span partitions, so hysteresis state cannot be sharded by partition. This is a documented limit, not something the demo needs to scale past.
+- **Notification is at-least-once.** Channels: console (always), webhook (`ALERT_WEBHOOK_URL`), Telegram (`TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID`). A failing channel is logged and counted but never blocks the others or the offset commit.
+- Alert `ts` for full-lot alerts is the wall-clock `emitted_at` of the result that crossed the threshold.

@@ -114,6 +114,11 @@ services:
       timescaledb: {condition: service_healthy}
     stop_grace_period: 30s
 
+  alerter:
+    <<: *app
+    command: ["python", "-m", "alerter.main"]
+    stop_grace_period: 15s
+
   simulator:
     <<: *app
     command: ["python", "-m", "simulator.main", "--speed", "1"]

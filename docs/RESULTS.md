@@ -39,3 +39,17 @@ Setup: 2 processor containers (group `occupancy-processor`), 12 synthetic lots x
 | Steady state, 45 s run at `--speed 60` | 96 closed windows compared to ground truth from the database: 0 missing, 0 mismatches. 120 rows, 120 distinct keys (108 closed, 12 still open). |
 | **Sink outage**: `docker compose stop timescaledb` at 21:01:27, restart at 21:02:27 (60 s), simulator running throughout (120 s at `--speed 60`, 2 processors) | Sink logged 9 retry attempts while the DB was down and committed no offsets. After restart the group `timescale-sink` drained to **lag 0**. Verifier on the DB: **264 windows compared, 0 missing, 0 mismatches**; 300 rows = 300 distinct `(lot_id, window_start)` keys, i.e. **0 lost, 0 duplicated**. |
 | HLL on tiny windows | Over 120 windows one had 2 real vehicles estimated as 1 (both hashed into the same register). Expected for HLL at n=2 (about 0.1% chance per window); at n>=50 the unit test bounds the error to 3 standard errors. |
+
+## Phase 4: alerter
+Scenario: `--start 2026-09-28T04:30:00Z` (Monday 10:00 IST) `--speed 60 --duration 170`, i.e. 10:00 to 12:50 simulated, so office lots sit at their ~92% peak and the lunch dip pulls them down; sensor `LOT-01:S-A-014` silenced after 20 event-minutes. Group `alerter` + `sink` + 2 processors, webhook receiver on the host.
+
+| Check | Result |
+|---|---|
+| FULL_LOT raised | at exactly 54/60 = 90% (e.g. `LOT-11 full: 90% (54/60 slots)`) |
+| FULL_LOT cleared | at 51/60 = 85% or below (e.g. `LOT-04 has space again: 85% (51/60 slots)`), never between 85% and 90% |
+| Re-raise after clear | `LOT-06` and `LOT-03` raised a second alert with a new `alert_id` after clearing |
+| Totals in `alerts` table | 10 FULL_LOT rows (8 cleared, 2 active) + 1 SENSOR_OFFLINE row (`Sensor S-A-014 silent for 6 min`) |
+| Webhook deliveries | **19** = 10 RAISED + 8 CLEARED + 1 sensor-offline, matching the table exactly |
+| Invalid messages skipped | 0 |
+
+Bug found by running it for real: the first version of the alerter passed `lot_id` and the JSON to `Producer.produce()` positionally, which swapped key and value (the second positional argument is the value). Unit tests could not catch it; the run did (consumer logged `Invalid JSON ... input_value=b'LOT-07'`). Fixed by using keyword arguments everywhere; the Phase 9 integration test asserts alert payloads round-trip.
