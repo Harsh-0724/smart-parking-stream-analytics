@@ -220,9 +220,6 @@ class ProcessorApp:
 
     def _produce_result(self, result: WindowResult) -> None:
         self._produce(topics.OCCUPANCY_5MIN, result.key.encode(), result.model_dump_json().encode())
-        if result.latest_ingest_ts is not None:
-            latency = result.emitted_at - result.latest_ingest_ts
-            metrics.INGEST_TO_EMIT.observe(max(0.0, latency.total_seconds()))
 
     def _emit(self) -> None:
         """Push open-window updates (dashboard freshness) and sensor-offline alerts."""
@@ -232,6 +229,8 @@ class ProcessorApp:
                 self._sync_capacity(state)
                 for result in state.dirty_open_results(now):
                     self._produce_result(result)
+                for ingest_ts in state.drain_pending_ingest():
+                    metrics.INGEST_TO_EMIT.observe(max(0.0, now - ingest_ts))
                 for signal_ in state.sensor_signals():
                     self._produce_alert(state.lot_id, signal_)
         self._update_gauges()

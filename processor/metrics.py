@@ -16,7 +16,7 @@ OWNED_PARTITIONS = Gauge("parking_owned_partitions", "parking.raw partitions ass
 OWNED_LOTS = Gauge("parking_owned_lots", "Lots whose state lives on this instance")
 INGEST_TO_EMIT = Histogram(
     "parking_ingest_to_emit_seconds",
-    "Wall-clock time from a source event being produced to a window result containing it",
+    "Wall-clock time from a sampled event being produced to the emit that reflects it",
     buckets=(0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120, 300),
 )
 CHECKPOINT_SECONDS = Histogram(

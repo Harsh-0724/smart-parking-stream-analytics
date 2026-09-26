@@ -53,3 +53,23 @@ Scenario: `--start 2026-09-28T04:30:00Z` (Monday 10:00 IST) `--speed 60 --durati
 | Invalid messages skipped | 0 |
 
 Bug found by running it for real: the first version of the alerter passed `lot_id` and the JSON to `Producer.produce()` positionally, which swapped key and value (the second positional argument is the value). Unit tests could not catch it; the run did (consumer logged `Invalid JSON ... input_value=b'LOT-07'`). Fixed by using keyword arguments everywhere; the Phase 9 integration test asserts alert payloads round-trip.
+
+## Phase 7: metrics
+Setup: Prometheus scraping 2 processors + sink + alerter + kafka-exporter (5 targets, all `up`). Scenario A: 90 s at `--speed 5 --malformed-pct 5 --dup-pct 5 --late-pct 10 --late-max-s 400`, clean state.
+
+| Metric vs. what the simulator reported | Result |
+|---|---|
+| `parking_events_dlq_total` vs simulator `malformed` | **573 = 573** |
+| `parking_events_duplicate_total` vs simulator `duplicates` | **550 = 550** |
+| `parking_events_late_total` | 24 (81 events were delayed 15-400 s; delays under the 180 s lateness+grace are accepted into their windows, the rest go to `parking.late`; `parking.late` end offset also 24) |
+| `kafka_consumergroup_lag` | 0 for `occupancy-processor`, `timescale-sink`, `alerter` after the run |
+| `parking_rebalances_total{kind="assign"}` | 2 (one per instance at start) |
+
+Scenario B, 60 s at `--speed 5` (12 lots, ~120 events/s, 2 processors), corrected latency metric:
+
+| Metric | Value |
+|---|---|
+| Ingest to emit p50 / p95 / p99 | **2.8 s / 6.0 s / 9.2 s** (the 5 s emit interval dominates: p50 is about half of it) |
+| Checkpoint duration p95, size | 21 ms, about 200 KB per instance |
+
+A first measurement of ingest-to-emit read p95 = 29 s. That was a flaw in the metric (see D18), not the pipeline. A second early run also showed 737 late events because the processors still held lot state whose event time was two days in the future from a previous scenario: event-time state must be reset (`make reset-topics`) between scenarios that use a different `--start`.

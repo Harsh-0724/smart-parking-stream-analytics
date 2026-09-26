@@ -1,0 +1,24 @@
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  # dns_sd resolves the service name to every replica, so `--scale processor=3` is picked up.
+  - job_name: processor
+    dns_sd_configs:
+      - names: [processor]
+        type: A
+        port: 8000
+  - job_name: sink
+    dns_sd_configs:
+      - names: [sink]
+        type: A
+        port: 8001
+  - job_name: alerter
+    dns_sd_configs:
+      - names: [alerter]
+        type: A
+        port: 8002
+  - job_name: kafka-exporter
+    static_configs:
+      - targets: [kafka-exporter:9308]

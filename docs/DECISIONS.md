@@ -86,3 +86,7 @@ ADR-style log. Decisions already fixed in `CLAUDE.md` (Python 3.12, confluent-ka
 - **Single instance.** A lot's results span partitions, so hysteresis state cannot be sharded by partition. This is a documented limit, not something the demo needs to scale past.
 - **Notification is at-least-once.** Channels: console (always), webhook (`ALERT_WEBHOOK_URL`), Telegram (`TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID`). A failing channel is logged and counted but never blocks the others or the offset commit.
 - Alert `ts` for full-lot alerts is the wall-clock `emitted_at` of the result that crossed the threshold.
+
+## D18. Prometheus setup
+- One Prometheus, `dns_sd_configs` per service so scaling replicas needs no config change; `kafka-exporter` (`danielqsj/kafka-exporter`) for consumer-group lag and offsets rather than re-implementing lag in each service. Grafana provisioning is left to the next session; the metrics are already the contract.
+- **Latency is sampled per event, not read from window results.** The first version observed `emitted_at - latest_ingest_ts` of each result, which measured the age of a quiet window's last occupancy event (p95 = 29 s, meaningless). It now records 1 in 8 accepted events' `ingest_ts` and observes `emit_time - ingest_ts` at the next emit, i.e. the real delay a reader of the output topic experiences.

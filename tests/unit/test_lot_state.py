@@ -279,3 +279,12 @@ def test_hll_ignores_repeats_and_survives_serialisation() -> None:
     clone = UniqueCounter.from_b64(hll.to_b64())
     assert clone.estimate() == hll.estimate()
     assert hll.memory_bytes == 1024
+
+
+def test_latency_samples_are_bounded_and_drained() -> None:
+    s = fresh()
+    for i in range(80):
+        feed(s, ev(B + i, "A-001", None))
+    samples = s.drain_pending_ingest()
+    assert len(samples) == 80 // 8
+    assert s.drain_pending_ingest() == []

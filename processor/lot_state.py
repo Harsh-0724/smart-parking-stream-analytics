@@ -29,6 +29,9 @@ class Params:
             raise ValueError("DEDUPE_TTL_S must be >= ALLOWED_LATENESS_S + WINDOW_GRACE_S")
 
 
+LATENCY_SAMPLE_EVERY = 8  # observe 1 in N accepted events for the latency histogram
+
+
 class Outcome(StrEnum):
     ACCEPTED = "accepted"
     DUPLICATE = "duplicate"
@@ -62,6 +65,8 @@ class LotState:
         self.sensors: dict[str, float] = {}  # sensor -> newest event_ts heard
         self.offline: dict[str, float] = {}  # sensor -> last_seen when it was flagged
         self.resume_offset = 0  # events below this partition offset are already in this state
+        self.pending_ingest: list[float] = []  # sampled ingest times awaiting their first emit
+        self._accepted = 0
 
     @property
     def watermark(self) -> float | None:
@@ -86,6 +91,9 @@ class LotState:
         if occupancy:
             self._apply_occupancy(e, ts, ingest_ts)
         self._close_ready_windows()
+        self._accepted += 1
+        if self._accepted % LATENCY_SAMPLE_EVERY == 0:
+            self.pending_ingest.append(ingest_ts)
         return Outcome.ACCEPTED
 
     def _remember(self, event_id: str, ts: float) -> None:
@@ -204,6 +212,11 @@ class LotState:
             emitted_at=utc(now),
             latest_ingest_ts=utc(win.latest_ingest_ts) if win.latest_ingest_ts else None,
         )
+
+    def drain_pending_ingest(self) -> list[float]:
+        """Ingest times of sampled events whose effect is about to be emitted."""
+        pending, self.pending_ingest = self.pending_ingest, []
+        return pending
 
     def drain_closed(self, now: float) -> list[WindowResult]:
         out = [self._result(w, True, now) for w in self.closed]

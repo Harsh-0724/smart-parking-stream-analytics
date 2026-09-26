@@ -119,6 +119,28 @@ services:
     command: ["python", "-m", "alerter.main"]
     stop_grace_period: 15s
 
+  kafka-exporter:
+    image: danielqsj/kafka-exporter:v1.8.0
+    restart: unless-stopped
+    command:
+      - --kafka.server=kafka-1:9092
+      - --kafka.server=kafka-2:9092
+      - --kafka.server=kafka-3:9092
+    depends_on:
+      init: {condition: service_completed_successfully}
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    restart: unless-stopped
+    ports: ["9090:9090"]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=7d
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    depends_on: [kafka-exporter]
+
   simulator:
     <<: *app
     command: ["python", "-m", "simulator.main", "--speed", "1"]
@@ -128,3 +150,4 @@ volumes:
   kafka-2-data:
   kafka-3-data:
   timescale-data:
+  prometheus-data:
