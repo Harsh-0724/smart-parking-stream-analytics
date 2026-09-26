@@ -8,9 +8,10 @@ linux/arm64), so the same compose files work on both.
 API have no published ports in `docker-compose.prod.yml`. Users reach the API and WebSocket through
 Caddy at `/api` and `/ws`, and Grafana at `/grafana/` (Grafana's own login protects it).
 
-Nothing here was deployed to a live VM; the artifacts are validated with
-`docker compose -f docker-compose.yml -f docker-compose.prod.yml config`, which shows `web` as the
-only service with published ports (80, 443) and fails if a required secret is unset.
+Not yet run on a cloud VM; verified locally with
+`docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --wait` run for real from the CI-built GHCR images
+(RESULTS.md, "Prod compose verification"): 14 containers healthy in 31 s, only ports 80 and 443 published, Caddy serving the
+frontend and `/grafana/` over HTTPS, and a refused start for each default or empty secret. It has not been run on a cloud VM.
 
 ## 1. Firewall: only 22, 80, 443
 
@@ -64,8 +65,8 @@ Edit `.env` (all secrets stay on the VM; `.env` is git-ignored):
 
 | Variable | Set to |
 |---|---|
-| `POSTGRES_PASSWORD` | a long random string (the prod compose refuses to start without it) |
-| `GRAFANA_PASSWORD` | a long random string (required in prod) |
+| `POSTGRES_PASSWORD` | a random string of at least 12 characters. The prod override runs a `prod-guard` check and **refuses to start** if this, `GRAFANA_PASSWORD`, `SIM_SALT` or `KAFKA_CLUSTER_ID` is unset, shorter than 12 characters, or still a default from `.env.example` |
+| `GRAFANA_PASSWORD` | a random string of at least 12 characters (checked by `prod-guard`) |
 | `SIM_SALT` | a random string; salts the vehicle-token hash |
 | `KAFKA_CLUSTER_ID` | `docker run --rm apache/kafka:3.9.0 /opt/kafka/bin/kafka-storage.sh random-uuid` |
 | `GHCR_OWNER` | your GitHub user or org name, **lowercase** (images are `ghcr.io/<owner>/smart-parking-*`) |

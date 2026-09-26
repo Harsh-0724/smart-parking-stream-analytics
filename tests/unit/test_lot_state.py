@@ -300,3 +300,29 @@ def test_latency_samples_are_bounded_and_drained() -> None:
     samples = s.drain_pending_ingest()
     assert len(samples) == 80 // 8
     assert s.drain_pending_ingest() == []
+
+
+def test_raw_ingest_latency_metric_observes_produce_to_consume_without_windowing() -> None:
+    from processor import metrics
+
+    def count() -> float:
+        return next(
+            s.value
+            for m in metrics.INGEST_TO_CONSUME.collect()
+            for s in m.samples
+            if s.name.endswith("_count")
+        )
+
+    before = count()
+    metrics.record_ingest_latency(ingest_ts=100.0, now=100.02)
+    metrics.record_ingest_latency(
+        ingest_ts=100.0, now=99.0
+    )  # producer clock ahead: clamped, not negative
+    assert count() == before + 2
+    total = next(
+        s.value
+        for m in metrics.INGEST_TO_CONSUME.collect()
+        for s in m.samples
+        if s.name.endswith("_sum")
+    )
+    assert total == pytest.approx(0.02, abs=1e-6) or total > 0.02

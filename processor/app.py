@@ -30,7 +30,14 @@ from common.schemas import (
 )
 from processor import metrics
 from processor.checkpoint import restore_partition, serialise
-from processor.lot_state import LotState, Outcome, Params, SensorSignal, utc
+from processor.lot_state import (
+    LATENCY_SAMPLE_EVERY,
+    LotState,
+    Outcome,
+    Params,
+    SensorSignal,
+    utc,
+)
 from processor.metadata import load_metadata
 
 POLL_BATCH = 500
@@ -60,6 +67,7 @@ class ProcessorApp:
         self._metadata_loaded_at = 0.0
         self._delivery_errors = 0
         self._stop = False
+        self._seen = 0  # valid events seen, for latency sampling
 
     # ---- lifecycle ----------------------------------------------------------------------------
 
@@ -162,6 +170,10 @@ class ProcessorApp:
         except ValueError as exc:
             self._dead_letter(msg, str(exc), partition, offset)
             return
+
+        self._seen += 1
+        if self._seen % LATENCY_SAMPLE_EVERY == 0:
+            metrics.record_ingest_latency(event.ingest_ts.timestamp(), time.time())
 
         state = self._lot_state(event.lot_id, partition)
         if offset < state.resume_offset:

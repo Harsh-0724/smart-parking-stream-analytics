@@ -107,6 +107,33 @@ Every item below was found by executing the system (or by reviewing code that ha
 
 Running these against the live product found bugs 13, 14 and 15 below, which the scripted drills did not.
 
+## Prod compose verification (2026-09-27)
+`docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --wait` run for real on this machine (Docker Desktop, arm64), from a clean state (`down -v`), with a real `.env`: random 32-character secrets generated for `POSTGRES_PASSWORD`, `GRAFANA_PASSWORD` and `SIM_SALT`, a freshly generated `KAFKA_CLUSTER_ID`, `GHCR_OWNER=harsh-0724`, `SITE_ADDRESS=localhost`. Images were pulled from GHCR (the CI-built multi-arch images, public), nothing built locally.
+
+| Check | Command / observation | Result |
+|---|---|---|
+| Starts and waits for health | `up -d --wait` | all 14 containers up in **31 s**; `kafka-init` exited 0 as designed |
+| Runs the CI images | `docker compose ps` | `ghcr.io/harsh-0724/smart-parking-{processor,sink,alerter,api,web}:latest`; the simulator reuses the processor image |
+| Stays healthy | 10 minutes running, then `docker inspect` on every container and `logs --since 10m` | **restart count 0 on all 14**, 0 tracebacks or errors in processor/sink/alerter/api logs, live data (631 of 1,800 slots occupied, 12 lots) |
+| Only 80/443 published | `lsof -iTCP -sTCP:LISTEN` for Docker processes | `*:443 *:80` only; Kafka, Postgres, Prometheus, Grafana, API show as unpublished (`9092/tcp`, `5432/tcp`, ...) |
+| Caddy, HTTP | `curl -sI http://localhost/` | `308 Permanent Redirect` to `https://localhost/` |
+| Caddy, frontend over HTTPS | `curl -sk https://localhost/` | `200 text/html`, `<title>Parking Ops</title>`; `/pipeline` returns 200 (SPA fallback); hashed asset returns `cache-control: public, max-age=31536000, immutable`; `x-content-type-options: nosniff`, `x-frame-options: DENY`, `referrer-policy: no-referrer` |
+| Caddy, API | `curl -sk https://localhost/api/health` | `{"status":"ok","database":true,"kafka_feed":true,...}` |
+| Caddy, Grafana at `/grafana/` | `/grafana/login` 200; `api/search?query=Pipeline` with the **real** password returns the provisioned "Pipeline health" dashboard; with the default `admin:admin` it returns **401** | correct |
+| Live data through Caddy over TLS | Playwright smoke suite with `E2E_BASE_URL=https://localhost` (needs `ignoreHTTPSErrors` for Caddy's internal CA, added to `playwright.config.ts`) | 3 of 3 pass, including WebSocket frames over `wss` |
+
+**Refusing default secrets: the check I had claimed did not exist.** The override used `${POSTGRES_PASSWORD:?...}`, which only fails when the variable is **unset or empty**. With `POSTGRES_PASSWORD=change-me` in `.env`, `docker compose config` accepted it and `up -d timescaledb` **started the database with the default password**. So the original prod override did *not* refuse default secrets. Fixed with a one-shot `prod-guard` service (`infra/prod_guard.sh`, run by the prod override) that inspects the actual values (rejects empty, shorter than 12 characters, or a known default such as `change-me*`, `admin`, or the dev cluster id); the brokers, TimescaleDB, Grafana and `web` depend on it completing successfully. Verified on a clean slate, each case starting from the good `.env` and changing one value:
+
+```
+A POSTGRES_PASSWORD=change-me   -> exit=1, running=0 | REFUSING TO START: POSTGRES_PASSWORD is empty or shorter than 12 characters
+B GRAFANA_PASSWORD=admin        -> exit=1, running=0 | REFUSING TO START: GRAFANA_PASSWORD is empty or shorter than 12 characters
+C SIM_SALT=change-me-too        -> exit=1, running=0 | REFUSING TO START: SIM_SALT still has a default value from .env.example
+D dev KAFKA_CLUSTER_ID          -> exit=1, running=0 | REFUSING TO START: KAFKA_CLUSTER_ID still has a default value from .env.example
+E POSTGRES_PASSWORD=abc123      -> exit=1, running=0 | REFUSING TO START: POSTGRES_PASSWORD is empty or shorter than 12 characters
+(SIM_SALT unset)                -> config error: required variable SIM_SALT is missing a value
+```
+`docker compose ps` after a refused start shows every service as `Created` (never `Up`) and only `prod-guard` as `Exited (1)`. With the good `.env` restored, the same command starts cleanly and `prod-guard` prints `secrets are set and none is a known default`.
+
 ## Phase 8: chaos runs (appended by scripts/chaos_*.py)
 
 ### Sink outage: PASS (2026-09-26 16:05 UTC)

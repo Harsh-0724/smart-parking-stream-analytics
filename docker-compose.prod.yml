@@ -12,11 +12,27 @@ x-ghcr: &ghcr
   restart: unless-stopped
 
 services:
-  kafka-1: {ports: !reset []}
-  kafka-2: {ports: !reset []}
-  kafka-3: {ports: !reset []}
+  # A one-shot check of the real secret values. `${VAR:?}` below only catches an unset variable; this
+  # also catches a value that is still the default from .env.example, and blocks every service that
+  # matters (brokers, database, Grafana, the public web entry point) until it passes.
+  prod-guard:
+    image: apache/kafka:3.9.0
+    restart: "no"
+    entrypoint: ["/bin/bash", "/prod_guard.sh"]
+    volumes: ["./infra/prod_guard.sh:/prod_guard.sh:ro"]
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      GRAFANA_PASSWORD: ${GRAFANA_PASSWORD:?set GRAFANA_PASSWORD in .env}
+      SIM_SALT: ${SIM_SALT:?set SIM_SALT in .env}
+      KAFKA_CLUSTER_ID: ${KAFKA_CLUSTER_ID:?set KAFKA_CLUSTER_ID in .env}
+
+  kafka-1: {ports: !reset [], depends_on: {prod-guard: {condition: service_completed_successfully}}}
+  kafka-2: {ports: !reset [], depends_on: {prod-guard: {condition: service_completed_successfully}}}
+  kafka-3: {ports: !reset [], depends_on: {prod-guard: {condition: service_completed_successfully}}}
   timescaledb:
     ports: !reset []
+    depends_on:
+      prod-guard: {condition: service_completed_successfully}
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
   prometheus:
@@ -45,12 +61,16 @@ services:
     image: ghcr.io/${GHCR_OWNER}/smart-parking-processor:${IMAGE_TAG:-latest}
 
   grafana:
+    depends_on:
+      prod-guard: {condition: service_completed_successfully}
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:?set GRAFANA_PASSWORD in .env}
 
   web:
     <<: *ghcr
     image: ghcr.io/${GHCR_OWNER}/smart-parking-web:${IMAGE_TAG:-latest}
+    depends_on:
+      prod-guard: {condition: service_completed_successfully}
     ports: !override
       - "80:80"
       - "443:443"
