@@ -55,7 +55,11 @@ export default function LotDetail() {
         <h1>{d.name}</h1>
         <span className="muted num">{d.lot_id}</span>
         <Badge kind={s.kind}>{s.label}</Badge>
-        {d.full_since && <span className="muted num">Lot full since {fmtDateTime(d.full_since)}</span>}
+        {d.full_since && (
+          <span className="muted num" title="Full-lot alerts raise at 90% and clear at 85%">
+            Full-lot alert active since {fmtDateTime(d.full_since)}
+          </span>
+        )}
       </div>
 
       <div className="cols">
@@ -66,7 +70,7 @@ export default function LotDetail() {
               <span className="aside num">{known ? `${occupied} of ${d.capacity} occupied` : "waiting for snapshot"}</span>
             </div>
             <div className="plan">
-              <SlotGrid slotIds={d.slot_ids} columns={d.columns} states={states} />
+              <SlotGrid slotIds={d.slot_ids} columns={d.columns} states={states} size={d.slot_ids.length > 150 ? 16 : 22} />
             </div>
             <div className="legend">
               <span className="legend__item"><Glyph shape="square" /> Occupied</span>
@@ -95,7 +99,7 @@ export default function LotDetail() {
           <div style={{ marginTop: "var(--sp-5)" }}>
             <Kv k="Entries, 24 h" v={fmtInt(d.entries_24h)} />
             <Kv k="Exits, 24 h" v={fmtInt(d.exits_24h)} />
-            <Kv k="Vehicles in window (approx.)" v={d.unique_vehicles_est == null ? "-" : `~${fmtInt(d.unique_vehicles_est)}`} hint="HyperLogLog estimate of distinct vehicles in the newest window, about 3% standard error" />
+            <Kv k="Vehicles, last closed window (approx.)" v={d.unique_vehicles_est == null ? "-" : `~${fmtInt(d.unique_vehicles_est)}`} hint="HyperLogLog estimate of distinct vehicles in the newest closed 5-minute window, about 3% standard error" />
             <Kv k="Avg dwell (estimate)" v={d.dwell_minutes_est == null ? "-" : `${d.dwell_minutes_est} min`} hint="Little's law: occupied time divided by entries over 24 h" />
             <Kv k="Type" v={d.personality} />
           </div>

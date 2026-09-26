@@ -92,8 +92,8 @@ export function TimeSeries({ points, label, threshold = 90, height = 220 }: Prop
           </g>
         ))}
         <line x1={M.left} x2={M.left + w} y1={y(threshold)} y2={y(threshold)} className="ts__threshold" />
-        <text x={M.left + w + 6} y={y(threshold) + 4} className="ts__threshold-label">
-          full {threshold}%
+        <text x={M.left + 4} y={y(threshold) - 4} className="ts__threshold-label">
+          alert at {threshold}%
         </text>
         {ticks.map((t) => (
           <text key={t} x={x(t)} y={height - 6} textAnchor="middle" className="ts__axis">

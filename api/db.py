@@ -64,7 +64,7 @@ async def lot_stats(pool: AsyncConnectionPool, lot_id: str) -> dict[str, Any]:
         SELECT coalesce(sum(entries), 0)::int AS entries, coalesce(sum(exits), 0)::int AS exits,
                sum(avg_occupied) * 300 AS occupied_seconds,
                (SELECT unique_vehicles_est FROM lot_occupancy_5min
-                 WHERE lot_id = %(lot)s ORDER BY window_start DESC LIMIT 1) AS unique_now
+                 WHERE lot_id = %(lot)s AND closed ORDER BY window_start DESC LIMIT 1) AS unique_now
         FROM lot_occupancy_5min, last
         WHERE lot_id = %(lot)s AND window_start > last.t - interval '24 hours'
         """,

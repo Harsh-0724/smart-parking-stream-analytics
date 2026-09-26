@@ -1,4 +1,4 @@
-.PHONY: up down clean topics lint type test test-integration fmt sync fetch-data reset-topics chaos chaos-broker chaos-processor chaos-sink chaos-bad-data chaos-late-dup chaos-lag hll-accuracy demo-reset openapi
+.PHONY: up down clean topics lint type test test-integration fmt sync fetch-data reset-topics chaos chaos-broker chaos-processor chaos-sink chaos-bad-data chaos-late-dup chaos-lag hll-accuracy demo-reset openapi load-test
 
 COMPOSE ?= docker compose
 # Host-side tools reach the brokers through the EXTERNAL listeners.
@@ -71,3 +71,6 @@ demo-reset:
 openapi:
 	uv run python -c "import json; from api.main import app; print(json.dumps(app.openapi(), indent=1, sort_keys=True))" > web/openapi.json
 	cd web && pnpm gen:types
+
+load-test:
+	uv run python scripts/load_test.py
