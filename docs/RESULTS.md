@@ -69,7 +69,7 @@ Scenario B, 60 s at `--speed 5` (12 lots, ~120 events/s, 2 processors), correcte
 
 | Metric | Value |
 |---|---|
-| Ingest to emit p50 / p95 / p99 | **2.8 s / 6.0 s / 9.2 s** (the 5 s emit interval dominates: p50 is about half of it) |
+| **Windowed-emit** latency p50 / p95 / p99 (producer timestamp to the emit that reflects the event) | **2.8 s / 6.0 s / 9.2 s** (the 5 s emit interval dominates: p50 is about half of it). Raw ingestion latency is measured separately, see "Ingestion latency versus windowed-emit latency". |
 | Checkpoint duration p95, size | 21 ms, about 200 KB per instance |
 
 A first measurement of ingest-to-emit read p95 = 29 s. That was a flaw in the metric (see D18), not the pipeline. A second early run also showed 737 late events because the processors still held lot state whose event time was two days in the future from a previous scenario: event-time state must be reset (`make reset-topics`) between scenarios that use a different `--start`.
@@ -103,7 +103,7 @@ Every item below was found by executing the system (or by reviewing code that ha
 | Kill one of two processors (`docker kill`) | Rebalance banner; all 6 partitions owned by the survivor; rebalance log entry; log line `partition assigned ... restored_lots ["LOT-..."] resume_offset ...`; events/s stayed > 0; restoring the second processor moved partitions back | PASS (26.7 s including restore) |
 | Kill the broker leading the most partitions | Broker row Down; its partitions re-elected onto the two survivors (leader count unchanged); "Brokers up 2 of 3"; events/s stayed > 0; after restart the row returned to Up | PASS (15.7 s) |
 | Restart counts after both drills | `docker inspect` on processors, sink, alerter, API | all 0 |
-| Latency during the processor failover | ingest-to-emit p95 rose to 23.6 s on the Pipeline screen (screenshot `docs/screenshots/pipeline-rebalance.png`) and recovered; this is the real cost of a rebalance | observed |
+| Windowed-emit latency during the processor failover | windowed-emit p95 rose to 23.6 s on the Pipeline screen (screenshot `docs/screenshots/pipeline-rebalance.png`) and recovered; this is the real cost of a rebalance | observed |
 
 Running these against the live product found bugs 13, 14 and 15 below, which the scripted drills did not.
 
@@ -221,9 +221,16 @@ HyperLogLog p=10: 1,024 bytes of registers, theoretical standard error 3.25%. Ex
 | 1,000,000 | 2 | 4.26% | 7.57% | 88,432 KiB | 1 KiB |
 
 ### Load test: ramp at 1, 2 and 3 processors (2026-09-26, `make load-test`)
-30 s per step, valid events at an exact offered rate (30% OCCUPANCY, 70% HEARTBEAT, 12 lots x 200 slots, production producer settings: idempotent, `acks=all`, lz4), event time = wall time. Generator and stack share one 10-CPU machine (Docker Desktop), so figures are a lower bound. Backlog = `parking.raw` end offsets minus events the processors report consuming. Latency = ingest-to-emit from Prometheus (1 in 8 events sampled). Data: `docs/loadtest/load_test.csv`; chart: `docs/loadtest/load_test.png`.
 
-| Processors | Offered/s | Produced/s | Sustained/s | p50 | p95 | p99 | Backlog at end of hold | Drain after hold | Processor CPU (indicative) |
+**Outcome, stated plainly: the planned ramp did not do what it was designed to do.** It was meant to find where a single processor saturates and then show throughput scaling with 2 and 3 processors. It never saturated one: a **single processor sustained about 100,000 events/s with no backlog**, the top of the ramp and about the limit of the load generator on this machine. So this test **cannot demonstrate horizontal scaling on its own**, and **the real per-processor ceiling is still unknown**; the only things established are lower bounds (100,000 events/s live with a 30% state-change mix; 142,000 events/s drained from a backlog in the heartbeat-heavy lag-spike drill). Horizontal scaling is evidenced by a different experiment, the **lag-spike drain-rate drill above: 142,000 events/s with 1 processor versus 293,000 events/s with 3 (2.06x)**. Pushing the generator beyond 100,000 events/s was not attempted, so no number above that is reported.
+
+What the ramp does establish: no data loss or backlog up to 100,000 events/s at any processor count, flat latency (below), and one real defect (a crash at 25,000 events/s in a first run; end of this section).
+
+Method: 30 s per step, valid events at an exact offered rate (30% OCCUPANCY, 70% HEARTBEAT, 12 lots x 200 slots, production producer settings: idempotent, `acks=all`, lz4), event time = wall time. Generator and stack share one 10-CPU machine (Docker Desktop), so figures are a lower bound. Backlog = `parking.raw` end offsets minus events the processors report consuming. Data: `docs/loadtest/load_test.csv`; chart: `docs/loadtest/load_test.png`.
+
+**Which latency this is:** the p50/p95/p99 columns below are **windowed-emit latency**, from the producer's timestamp to the 5-second window emit that reflects the event. They include waiting for the next emit, so they say nothing about how fast an event is *ingested*. Raw ingestion latency (produce to consume, no windowing) is measured separately in the next section: tens to a few hundred milliseconds.
+
+| Processors | Offered/s | Produced/s | Sustained/s | Windowed-emit p50 | p95 | p99 | Backlog at end of hold | Drain after hold | Processor CPU (indicative) |
 |---|---|---|---|---|---|---|---|---|---|
 | 1 | 1,000 | 1,001 | 969 | 2.7 s | 4.9 s | 8.5 s | 0 | 1 s | 2% |
 | 1 | 5,000 | 5,008 | 4,842 | 2.5 s | 4.8 s | 7.0 s | 0 | 1 s | 8% |
@@ -245,13 +252,27 @@ HyperLogLog p=10: 1,024 bytes of registers, theoretical standard error 3.25%. Ex
 | 3 | 100,000 | 100,113 | 96,379 | 2.5 s | 4.8 s | 5.0 s | 0 | 1 s | 62% |
 
 What the numbers say, and what they do not:
-- **Throughput:** every processor count kept up with every offered rate up to **100,000 events/s** (backlog 0 at the end of each 30 s hold, drained within about 1 to 2 s), so the ramp did **not** reach a saturation point with 1, 2 or 3 processors. A single processor sustained about 100,000 events/s of this mix on this machine. The largest event source in this project (12 lots) is therefore far below what one processor can absorb.
-- **Scaling from 1 to 3 processors is not visible here** because one processor is never the bottleneck at these rates; the scaling evidence is the lag-spike drill above (drain rate 142k to 293k events/s, 2.06x, with a 2.6M-event backlog). Partition count (6) and the skew of real lot IDs bound the parallelism.
-- **Latency is flat, about 4.8 s p95 and 2.5 s p50, at every rate.** It is set by the 5 s emit interval (`EMIT_INTERVAL_S`), not by load; it would only rise if the processors fell behind. Lowering the emit interval lowers the floor.
-- **CPU** is `docker stats` summed over processor containers, sampled once mid-hold; treat it as indicative only (one sample, and it under-reports short bursts).
-- HyperLogLog accuracy and memory (worst error 7.57% at 1,000,000 vehicles against a 9.75% bound; 1 KiB per window versus 88 MB for an exact set) is recorded in the HLL section above and is not repeated here.
+- **Throughput:** every processor count kept up with every offered rate up to 100,000 events/s (backlog 0 at the end of each 30 s hold, drained in about 1 s). Because nothing saturated, the 1, 2 and 3 processor rows look alike; that is the absence of a bottleneck, not evidence that adding processors does nothing.
+- **Windowed-emit latency is flat, about 2.5 s p50 and 4.8 s p95, at every rate.** It is set by the 5 s emit interval (`EMIT_INTERVAL_S`), not by load, and would only rise if the processors fell behind. It is **not** ingestion latency.
+- **CPU** is `docker stats` summed over processor containers, sampled once mid-hold; indicative only (one sample; it under-reports short bursts).
+- HyperLogLog accuracy and memory (worst error 7.57% at 1,000,000 vehicles against a 9.75% bound; 1 KiB per window versus 88 MB for an exact set) is in the HLL section above and is not repeated here.
 
-**A first run of this test crashed the processors at 25,000 events/s and is not reported as a result.** The processor remembered every event id (heartbeats included) for 300 s of event time and wrote that set into each lot's checkpoint. At 25,000 events/s a lot's checkpoint exceeded Kafka's 1 MB message limit (`MSG_SIZE_TOO_LARGE`); the processor then correctly refused to checkpoint and crash-looped, and consumed counters went backwards. Fixed by de-duplicating only state-changing events (a re-processed heartbeat is idempotent) and raising `max.message.bytes` on `state.changelog` to 16 MB (DECISIONS D27, bug #12 below).
+**A first run of this test crashed the processors at 25,000 events/s and is not reported as a result.** The processor remembered every event id (heartbeats included) for 300 s of event time and wrote that set into each lot's checkpoint. At 25,000 events/s a lot's checkpoint exceeded Kafka's 1 MB message limit (`MSG_SIZE_TOO_LARGE`); the processor then correctly refused to checkpoint and crash-looped, and consumed counters went backwards. Fixed by de-duplicating only state-changing events (a re-processed heartbeat is idempotent) and raising `max.message.bytes` on `state.changelog` to 16 MB (DECISIONS D27, bug #12 above).
+
+
+### Ingestion latency versus windowed-emit latency (2026-09-26 20:35 UTC; two different numbers)
+`make ingest-latency`: 2 processors, 30 s per rate, valid events from `scripts/loadgen.py`, producer and processors on one host (so wall clocks agree). Quantiles are Prometheus estimates from histogram buckets (1 ms to 60 s), so resolution is the bucket width.
+
+| Offered/s | **Raw ingestion** p50 | p95 | p99 | Windowed emit p50 | p95 | p99 |
+|---|---|---|---|---|---|---|
+| 1,000 | **134 ms** | **239 ms** | **249 ms** | 2.6 s | 4.9 s | 7.7 s |
+| 10,000 | **78 ms** | **225 ms** | **295 ms** | 2.6 s | 4.8 s | 6.8 s |
+| 50,000 | **38 ms** | **82 ms** | **329 ms** | 2.5 s | 4.8 s | 6.0 s |
+| 100,000 | **36 ms** | **153 ms** | **464 ms** | 2.5 s | 4.9 s | 7.6 s |
+
+How to read this: **raw ingestion latency** (bold) is the time from the producer stamping an event to the processor holding it: **p50 36-134 ms, p95 82-239 ms, p99 249-464 ms** across 1,000 to 100,000 events/s. **Windowed-emit latency** is a different quantity that also includes waiting for the next 5-second window emit: **p50 about 2.5 s, p95 about 4.8 s**. The 4.8 s figure quoted elsewhere is the windowed-emit p95, never the ingestion latency, and the two must not be swapped in the paper or the viva.
+
+Caveats, measured not assumed: (1) raw latency is *higher* at 1,000 events/s (p50 134 ms) than at 50,000 (38 ms). At light load the processor's `consume(500, 0.2)` call waits up to 200 ms to fill a batch, and the producer adds up to its 20 ms linger; at high load batches fill at once. So the low-load figure is dominated by batching windows, not by Kafka. (2) The load generator stamps `ingest_ts` once per 50 ms slice, so a few tens of milliseconds of the measured value are generator-side. (3) Quantiles are Prometheus estimates from histogram buckets, so resolution is the bucket width. (4) Producer and processors share one host, so their wall clocks agree; across hosts the clocks would need synchronising.
 
 ### Late and duplicate data: PASS (2026-09-26 18:39 UTC)
 --late-pct 10 --dup-pct 5, in-grace (A) and beyond-grace (B) delays

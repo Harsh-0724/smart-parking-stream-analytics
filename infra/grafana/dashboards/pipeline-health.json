@@ -376,8 +376,8 @@
   {
    "id": 8,
    "type": "timeseries",
-   "title": "Ingest to emit latency",
-   "description": "Wall-clock time from a sensor event being produced to the emit that reflects it",
+   "title": "Windowed-emit latency (ingest to emit)",
+   "description": "Producer timestamp to the 5 s window emit that reflects the event. Includes waiting for the next emit, so it is about 2.5 s p50 and 4.8 s p95 regardless of load. Not the same as raw ingestion latency (next panel).",
    "datasource": {
     "type": "prometheus",
     "uid": "prometheus"
@@ -623,6 +623,68 @@
    "fieldConfig": {
     "defaults": {
      "unit": "short",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 0,
+      "showPoints": "never"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    }
+   }
+  },
+  {
+   "id": 13,
+   "type": "timeseries",
+   "title": "Raw ingestion latency (produce to consume)",
+   "description": "Producer timestamp (ingest_ts) to the processor having the event: no windowing. Tens to hundreds of milliseconds. Sampled 1 in 8 events.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 28,
+    "w": 12,
+    "h": 8
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "histogram_quantile(0.5, sum by (le) (rate(parking_ingest_to_consume_seconds_bucket[1m])))",
+     "legendFormat": "p50",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     }
+    },
+    {
+     "refId": "B",
+     "expr": "histogram_quantile(0.95, sum by (le) (rate(parking_ingest_to_consume_seconds_bucket[1m])))",
+     "legendFormat": "p95",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     }
+    },
+    {
+     "refId": "C",
+     "expr": "histogram_quantile(0.99, sum by (le) (rate(parking_ingest_to_consume_seconds_bucket[1m])))",
+     "legendFormat": "p99",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s",
      "custom": {
       "lineWidth": 1,
       "fillOpacity": 0,

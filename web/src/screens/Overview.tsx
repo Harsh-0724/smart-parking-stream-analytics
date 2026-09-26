@@ -82,7 +82,7 @@ export default function Overview() {
 
       <div className="strip" aria-label="Pipeline heartbeat">
         <Stat size="sm" label="Events / s" value={fmtRate(p?.events_per_s)} />
-        <Stat size="sm" label="Ingest to emit p95" value={fmtSeconds(p?.latency_p95_s)} title="Wall-clock time from a sensor event being produced to the window result that includes it" />
+        <Stat size="sm" label="Windowed-emit p95" value={fmtSeconds(p?.latency_p95_s)} title="Time from a sensor event being produced to the 5-second window emit that reflects it. Includes the wait for the next emit; raw ingestion latency (produce to consume) is tens of milliseconds and is measured separately in Prometheus." />
         <Stat size="sm" label="Committed lag" value={fmtInt(processor?.total_lag)} unit="msgs" title="Offsets are committed at 10 s checkpoints, so this rises and falls in a sawtooth; it is not the true backlog" />
         <Stat size="sm" label="Brokers up" value={brokersUp == null ? "-" : `${brokersUp}`} unit="of 3" />
         <Stat size="sm" label="Consumer group" value={rebalancing ? "Rebalancing" : processor?.state ?? "-"} />

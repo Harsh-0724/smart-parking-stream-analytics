@@ -161,8 +161,8 @@ export default function Pipeline() {
 
       <div className="strip">
         <Stat size="md" label="Events / s (parking.raw)" value={fmtRate(p.events_per_s)} />
-        <Stat size="md" label="Ingest to emit p50" value={fmtSeconds(p.latency_p50_s)} />
-        <Stat size="md" label="Ingest to emit p95" value={fmtSeconds(p.latency_p95_s)} />
+        <Stat size="md" label="Windowed-emit p50" value={fmtSeconds(p.latency_p50_s)} />
+        <Stat size="md" label="Windowed-emit p95" value={fmtSeconds(p.latency_p95_s)} />
         <Stat size="md" label="Dead-lettered" value={fmtInt(p.dlq_messages)} unit="msgs" sub="malformed, in parking.dlq" />
         <Stat size="md" label="Late" value={fmtInt(p.late_messages)} unit="msgs" sub="past grace, in parking.late" />
       </div>

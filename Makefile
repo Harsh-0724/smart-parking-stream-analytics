@@ -1,4 +1,4 @@
-.PHONY: up down clean topics lint type test test-integration fmt sync fetch-data reset-topics chaos chaos-broker chaos-processor chaos-sink chaos-bad-data chaos-late-dup chaos-lag hll-accuracy demo-reset openapi load-test
+.PHONY: up down clean topics lint type test test-integration fmt sync fetch-data reset-topics chaos chaos-broker chaos-processor chaos-sink chaos-bad-data chaos-late-dup chaos-lag hll-accuracy demo-reset openapi load-test ingest-latency
 
 COMPOSE ?= docker compose
 # Host-side tools reach the brokers through the EXTERNAL listeners.
@@ -74,3 +74,6 @@ openapi:
 
 load-test:
 	uv run python scripts/load_test.py
+
+ingest-latency:
+	uv run python scripts/ingest_latency.py

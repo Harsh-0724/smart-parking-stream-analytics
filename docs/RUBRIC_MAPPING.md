@@ -2,11 +2,17 @@
 
 The circular checklist is in `docs/CIRCULAR_CHECKLIST.md`. This file maps the same work to the course grading scheme.
 
+## Assumptions to verify before the report is finalized
+
+- **ASSUMPTION TO VERIFY: "program-specific requirements" (CIE Experiential Learning, 10 marks) was interpreted as the nine circular pipeline items, because the actual syllabus wording for that specific rubric line was not available. Check this against real departmental guidance before the report is finalized; if the department names other requirements, section 3 must be extended.**
+- The CO1-CO5 wording is the exact text supplied for this project; the mapping of evidence to each CO is my own judgement.
+- The CO5 estimate (section 2) uses two measured inputs and otherwise cited figures or labelled assumptions (1.5 arrivals per slot per day, 25% search-time reduction); it is an estimate, not a measurement.
+
 ## 1. Course outcomes (exact wording)
 
 | CO | Outcome | Evidence in this repo |
 |---|---|---|
-| **CO1** | Describe the need and the application of real time and stream processing in real world applications. | The application is live parking availability. A batch job answers "how full was the lot yesterday"; a driver needs "is there a free slot now". The system shows the difference: ingest-to-emit p95 4.8 s (RESULTS.md, load test) against a batch's hours, and a floor plan that flips slot by slot (`web/`, `docs/screenshots/`). Need and design context: README, DECISIONS D7, D12. |
+| **CO1** | Describe the need and the application of real time and stream processing in real world applications. | The application is live parking availability. A batch job answers "how full was the lot yesterday"; a driver needs "is there a free slot now". The system shows the difference with two separately measured latencies (RESULTS.md): **raw ingestion latency** (produce to processor, no windowing) p50 36-134 ms and p99 at most 464 ms, and **windowed-emit latency** (which also waits for the 5 s window emit) p95 about 4.8 s, both against a batch's hours, and a floor plan that flips slot by slot (`web/`, `docs/screenshots/`). Need and design context: README, DECISIONS D7, D12. |
 | **CO2** | Comprehend and apply the various operations like data ingestion, data communication, data analysis and storage for different streaming data applications. | **Ingestion:** `simulator/` (synthetic demand curves and the UCI Birmingham replay) and `scripts/loadgen.py`. **Communication:** Kafka topics, partitioning by `lot_id`, three consumer groups, manual commits (`common/topics.py`, `common/kafka.py`, `infra/create_topics.sh`). **Analysis:** event-time windows, watermark, dedupe, HyperLogLog (`processor/lot_state.py`, `processor/hll.py`). **Storage:** TimescaleDB hypertable, compression, retention and an hourly continuous aggregate (`infra/timescale/init.sql`, `sink/db.py`). |
 | **CO3** | Investigate and apply streaming concepts using modern tools to solve problems related to society and industry. | Streaming concepts applied and *investigated*: watermarks and grace, at-least-once versus exactly-once (D10), checkpoint/restore (D11), idempotent sinks (D16), sketches versus exact counting (RESULTS: HLL table). The investigation is recorded as experiments with expected and measured results: six chaos drills, a load test that found a scalability limit (bug 12), and fourteen other defects found by running the system (RESULTS.md, "Bugs and flaws found by running things for real"). Tools: Kafka KRaft, TimescaleDB, Prometheus, Grafana, FastAPI, React, Playwright, GitHub Actions. |
 | **CO4** | Demonstrate a prototype application for streaming data using Kafka as a team / individual. | A complete working prototype: `make up`, live console at `:8081`, `docs/DEMO.md` (11-minute script including a live processor kill and broker kill), CI that starts the whole stack and tests it end to end, multi-arch images on GHCR. |
@@ -23,8 +29,8 @@ source or is an explicit assumption, and the table shows how much the answer mov
 
 **Measured here**
 
-- One processor sustained about **100,000 events/s** with no backlog (load test; 30% state-changing events, generator on the same machine). At one heartbeat per sensor per 30 s that is on the order of 3 million sensors per processor if traffic were only heartbeats; halving it for state changes and headroom gives **about 1.5 million slots** per processor. The 12-lot demo (1,800 slots) uses well under 1% of one processor, so the pipeline is not what limits a city-scale deployment.
-- **Ingest-to-emit p95 = 4.8 s** at every tested rate (set by the 5 s emit interval). In the demo data the average lot changes state about 1.9 times per 5-minute window (0.0065 changes/s; morning ramp, from the `lot_occupancy_5min` table), so the chance that a lot's displayed count is out of date by the time it is shown is roughly 0.0065 x 4.8 = 3%.
+- One processor sustained at least **100,000 events/s** with no backlog (load test; 30% state-changing events, generator on the same machine). That is a lower bound: the ramp never saturated a processor, so the true per-processor ceiling is unknown. At one heartbeat per sensor per 30 s that is on the order of 3 million sensors per processor if traffic were only heartbeats; halving it for state changes and headroom gives **about 1.5 million slots** per processor. The 12-lot demo (1,800 slots) uses well under 1% of one processor, so the pipeline is not what limits a city-scale deployment.
+- **Windowed-emit latency p95 = 4.8 s** at every tested rate (set by the 5 s emit interval; raw ingestion latency is much lower, p95 82-239 ms). The Overview counts are emit-based, so 4.8 s is the relevant staleness for them (the floor plan follows raw events). In the demo data the average lot changes state about 1.9 times per 5-minute window (0.0065 changes/s; morning ramp, from the `lot_occupancy_5min` table), so the chance that a lot's displayed count is out of date by the time it is shown is roughly 0.0065 x 4.8 = 3%.
 
 **Cited**
 
@@ -52,8 +58,7 @@ Method: saved minutes = arrivals x cruising share x search minutes x 25%; CO2 = 
 (`docs/DECISIONS.md`, D1-D27), measured outcomes (`docs/RESULTS.md`), failures and fixes (bug table), societal estimate (section 2).
 
 **Program-specific requirements (10).** These are satisfied by the department circular's nine mandatory pipeline
-requirements, each with a file and function: `docs/CIRCULAR_CHECKLIST.md`. (If your program has additional named
-requirements beyond the circular, add them here; I have not seen them.)
+requirements, each with a file and function: `docs/CIRCULAR_CHECKLIST.md`. (**Flagged assumption, see "Assumptions to verify" at the top:** this interpretation is unconfirmed; if your program has additional named requirements beyond the circular, add them here.)
 
 **Video demonstration (20): outline, about 8 minutes, screen recording with voice-over, cut from `docs/DEMO.md`.**
 
@@ -85,7 +90,7 @@ The SEE component expects a **poster** and a **written report**. These are yours
 | Architecture and design decisions | README diagram; `docs/DECISIONS.md` D1-D27 |
 | Windowing, watermark, HyperLogLog | `docs/DECISIONS.md` D12, D13; `processor/lot_state.py`; RESULTS.md HLL table (worst error 7.57% at 1M vehicles, bound 9.75%; 1 KiB versus 88 MB) |
 | Fault tolerance experiments | `docs/RESULTS.md` Phase 8 (six drills, PASS/FAIL against explicit expectations); `scripts/chaos_*.py` |
-| Performance | RESULTS.md load test (`docs/loadtest/load_test.png`, `.csv`); Phase 7 latency; lag-spike drain rates |
+| Performance | RESULTS.md load test (`docs/loadtest/load_test.png`, `.csv`; no saturation reached), "Ingestion latency versus windowed-emit latency", lag-spike drain rates (the scaling evidence) |
 | **Bugs found and fixed (strong evidence for CO3 and CO4)** | RESULTS.md "Bugs and flaws found by running things for real": the **alerter key/value swap** (bug 1), the **closed-window capacity race** (bug 2), the **checkpoint-size crash found by the load test** (bug 12), the **consumer crash on a coordinator broker kill** (bug 13) and the **blank Pipeline screen during failover** (bug 14), found only by driving the live UI, and the measurement mistakes (bugs 8-10), which show method, not only results |
 | UI and design system | `docs/screenshots/` (light and dark), DECISIONS D21, `web/src/ui/` |
 | Deployment | `docs/DEPLOY.md` |
@@ -103,6 +108,6 @@ The SEE component expects a **poster** and a **written report**. These are yours
 7. **Why commit offsets only at checkpoints, and what does that do to lag?** The commit order is what makes the guarantee above hold; the cost is that committed-offset lag saw-tooths by up to 10 s of traffic, so the UI labels it and true backlog is measured differently (D19, D22).
 8. **Why not use Kafka Streams or Flink?** The brief requires explainable own logic; every rule is small enough to defend line by line (`processor/lot_state.py`, tested in `tests/unit/test_lot_state.py`).
 9. **How do you know the results are right?** The simulator writes an independent ground truth per window; every drill compares the database with it (hundreds of windows, 0 mismatches), and the integration test asserts hand-derived expected values.
-10. **What did the load test show?** One processor sustained about 100,000 events/s with no backlog; latency is flat at 4.8 s p95 because of the 5 s emit interval. It also found a real limit: checkpoints grew with the event rate and exceeded Kafka's 1 MB message limit at 25,000 events/s, fixed by not de-duplicating heartbeats and raising the limit (D27).
+10. **What did the load test show, and what did it not?** One processor sustained about 100,000 events/s with no backlog, but the ramp never saturated it, so the per-processor ceiling is **unknown** and the ramp alone cannot show horizontal scaling; scaling is evidenced by the lag-spike drain drill (142k versus 293k events/s at 1 versus 3 processors). Two different latencies were measured: **raw ingestion latency** (produce to processor) p50 36-134 ms, p99 at most 464 ms, and **windowed-emit latency** p95 about 4.8 s, which is the 5 s emit interval and must not be mistaken for ingestion latency. The test also found a real limit: checkpoints grew with the event rate and exceeded Kafka's 1 MB message limit at 25,000 events/s, fixed by not de-duplicating heartbeats and raising the limit (D27).
 11. **Why does the API not join a consumer group?** It must see every message (fan-out, not work sharing), so it uses manual partition assignment and bootstraps slot state from the processor's own checkpoints (D20).
 12. **What are the limits of the average-dwell and vehicle counts on the screen?** Both are labelled estimates: HyperLogLog has about 3% error, and Little's law underestimates dwell while a lot is still filling (D20).
