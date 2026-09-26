@@ -57,6 +57,16 @@ def main() -> int:
         errors == 0,
         f"errors={errors}",
     )
+    restarts = [
+        c.sh(["docker", "inspect", cid, "--format", "{{.RestartCount}}"]).strip()
+        for service in ("processor", "sink")
+        for cid in c.container_ids(service)
+    ]
+    r.check(
+        "no consumer crashed or was restarted during the broker failure",
+        set(restarts) == {"0"},
+        f"restart counts {restarts}",
+    )
     drained = c.wait_drained(180)
     r.check("consumer lag drains to 0", drained is not None, f"{drained:.0f} s" if drained else "")
     time.sleep(10)

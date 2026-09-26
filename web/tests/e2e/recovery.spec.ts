@@ -23,13 +23,14 @@ test("killing a processor shows a rebalance and the survivor takes over", async 
   sh(`docker kill ${victim}`);
 
   // Rebalancing is visible in the UI, then a single owner holds all 6 partitions
-  await expect(page.getByText("Rebalancing").first()).toBeVisible({ timeout: 45_000 });
+  await expect(page.locator(".banner")).toBeVisible({ timeout: 45_000 });
   await expect.poll(async () => (await owners()).size, { timeout: 60_000 }).toBe(1);
   await expect(page.getByText(/rebalance finished|assignment changed/).first()).toBeVisible();
 
   // The survivor restored state from the changelog (the log shows it), and data keeps flowing
-  const logs = sh("docker compose logs --no-log-prefix --since 2m processor");
-  expect(logs).toMatch(/partition assigned.*restored_lots/);
+  await expect
+    .poll(() => sh("docker compose logs --no-log-prefix --since 3m processor 2>&1"), { timeout: 30_000 })
+    .toMatch(/"restored_lots": \["LOT-[^\]]+\].*partition assigned/);
   await page.goto("/");
   const eps = page.locator(".strip .stat", { hasText: "Events / s" }).locator(".stat__value");
   await expect.poll(async () => number(await eps.textContent()), { timeout: 30_000 }).toBeGreaterThan(0);
@@ -42,21 +43,30 @@ test("killing a processor shows a rebalance and the survivor takes over", async 
 
 test("killing a broker shows it Down, leaders move, and data keeps flowing", async ({ page }) => {
   await page.goto("/pipeline");
-  await expect(page.getByText("kafka-2")).toBeVisible({ timeout: 30_000 });
-  sh("docker kill kafka-2");
+  const leads = (id: number) => page.getByRole("row", { name: new RegExp(`kafka-${id}\\b`) }).locator("td").nth(1);
+  await expect(leads(1)).toBeVisible({ timeout: 30_000 });
+  const counts = async () => Promise.all([1, 2, 3].map(async (id) => number(await leads(id).textContent())));
+  await expect.poll(async () => (await counts()).reduce((a, b) => a + b, 0), { timeout: 30_000 }).toBeGreaterThan(0);
 
-  const row = page.getByRole("row", { name: /kafka-2/ });
-  await expect(row.getByText(/Down/)).toBeVisible({ timeout: 45_000 });
+  // Kill the broker that currently leads the most partitions (the most interesting failure)
+  const before = await counts();
+  const total = before.reduce((a, b) => a + b, 0);
+  const victim = before.indexOf(Math.max(...before)) + 1;
+  const survivors = [1, 2, 3].filter((id) => id !== victim);
+  sh(`docker kill kafka-${victim}`);
+
+  await expect(page.getByRole("row", { name: new RegExp(`kafka-${victim}\\b`) }).getByText(/Down/)).toBeVisible({ timeout: 45_000 });
   // Its partitions were re-elected onto the two surviving brokers
-  const leads = (id: string) => page.getByRole("row", { name: new RegExp(`kafka-${id}`) }).locator("td").nth(1);
-  await expect.poll(async () => number(await leads("1").textContent()) + number(await leads("3").textContent()), { timeout: 45_000 }).toBe(22);
+  await expect
+    .poll(async () => (await Promise.all(survivors.map(async (id) => number(await leads(id).textContent())))).reduce((a, b) => a + b, 0), { timeout: 60_000 })
+    .toBe(total);
   // Pipeline keeps moving with one broker down (RF 3, min ISR 2)
   await page.goto("/");
-  await expect(page.getByText("2", { exact: true }).first()).toBeVisible();
   const eps = page.locator(".strip .stat", { hasText: "Events / s" }).locator(".stat__value");
   await expect.poll(async () => number(await eps.textContent()), { timeout: 30_000 }).toBeGreaterThan(0);
+  await expect(page.locator(".strip .stat", { hasText: "Brokers up" }).locator(".stat__value")).toContainText("2");
 
-  sh("docker compose start kafka-2");
+  sh(`docker compose start kafka-${victim}`);
   await page.goto("/pipeline");
-  await expect(page.getByRole("row", { name: /kafka-2/ }).getByText("Up")).toBeVisible({ timeout: 90_000 });
+  await expect(page.getByRole("row", { name: new RegExp(`kafka-${victim}\\b`) }).getByText("Up")).toBeVisible({ timeout: 90_000 });
 });

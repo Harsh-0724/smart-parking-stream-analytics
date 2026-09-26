@@ -31,7 +31,7 @@ TOPICS = (
     topics.RAW, topics.DLQ, topics.LATE, topics.LOT_METADATA,
     topics.OCCUPANCY_5MIN, topics.ALERTS, topics.CHANGELOG,
 )  # fmt: skip
-KAFKA_TIMEOUT_S = 5
+KAFKA_TIMEOUT_S = 3
 REBALANCE_HISTORY = 30
 LATENCY_QUERY = (
     "histogram_quantile({q}, sum by (le) (rate(parking_ingest_to_emit_seconds_bucket[1m])))"
@@ -55,30 +55,54 @@ def prometheus_scalar(base_url: str, query: str) -> float | None:
 
 class PipelineCollector:
     def __init__(self, bootstrap: str, prometheus_url: str) -> None:
-        self._admin = AdminClient({"bootstrap.servers": bootstrap})
-        self._consumer = Consumer(
-            {
-                "bootstrap.servers": bootstrap,
-                "group.id": "api-gateway-probe",
-                "enable.auto.commit": False,
-            }
-        )
+        self._admin = AdminClient({"bootstrap.servers": bootstrap})  # replaced every cycle
+        self._bootstrap = bootstrap
         self._prom = prometheus_url
         self._last_end: tuple[float, int] | None = None
         self._signatures: dict[str, tuple[str, tuple[tuple[str, tuple[str, ...]], ...]]] = {}
         self.rebalances: deque[RebalanceEvent] = deque(maxlen=REBALANCE_HISTORY)
+        self._last_good: PipelineStats | None = None
 
     def collect(self) -> PipelineStats:
         try:
-            return self._collect()
-        except Exception as exc:  # Kafka unreachable: show that instead of failing the endpoint
+            stats = self._collect()
+        except Exception as exc:  # Kafka unreachable, e.g. during a broker failover
+            error = str(exc)[:200]
+            if self._last_good is not None:
+                # Keep showing the last good snapshot, flagged, instead of a blank screen while
+                # the cluster elects new leaders.
+                return self._last_good.model_copy(
+                    update={
+                        "generated_at": _now(),
+                        "error": error,
+                        "rebalances": list(reversed(self.rebalances)),
+                    }
+                )
             return PipelineStats(
-                generated_at=_now(), error=str(exc)[:200], events_per_s=None, latency_p50_s=None,
+                generated_at=_now(), error=error, events_per_s=None, latency_p50_s=None,
                 latency_p95_s=None, dlq_messages=0, late_messages=0, brokers=[], topics=[],
                 groups=[], rebalances=list(self.rebalances),
             )  # fmt: skip
+        self._last_good = stats
+        return stats
 
     def _collect(self) -> PipelineStats:
+        # A fresh probe consumer every cycle: a long-lived one keeps a stale metadata cache and,
+        # after a broker dies, keeps asking the dead leader ("host resolution failure") forever.
+        self._admin = AdminClient({"bootstrap.servers": self._bootstrap})  # same staleness problem
+        probe = Consumer(
+            {
+                "bootstrap.servers": self._bootstrap,
+                "group.id": "api-gateway-probe",
+                "enable.auto.commit": False,
+            }
+        )
+        try:
+            return self._collect_with(probe)
+        finally:
+            probe.close()
+
+    def _collect_with(self, probe: Consumer) -> PipelineStats:
         metadata = self._admin.list_topics(timeout=KAFKA_TIMEOUT_S)
         ends: dict[tuple[str, int], tuple[int, int]] = {}
         topic_infos: list[TopicInfo] = []
@@ -90,7 +114,7 @@ class PipelineCollector:
             partitions = []
             total = 0
             for pid, pm in sorted(topic.partitions.items()):
-                low, high = self._consumer.get_watermark_offsets(
+                low, high = probe.get_watermark_offsets(
                     TopicPartition(name, pid), timeout=KAFKA_TIMEOUT_S
                 )
                 ends[(name, pid)] = (low, high)

@@ -17,7 +17,7 @@ from prometheus_client import start_http_server
 
 from common import topics
 from common.config import Settings
-from common.kafka import consumer_config, producer_config
+from common.kafka import commit_tolerant, consumer_config, producer_config
 from common.schemas import (
     Alert,
     AlertKind,
@@ -297,7 +297,7 @@ class ProcessorApp:
             if p in self._next_offset
         ]
         if offsets:
-            self._consumer.commit(offsets=offsets, asynchronous=False)
+            commit_tolerant(self._consumer, offsets, self._log)
         metrics.CHECKPOINT_SECONDS.observe(time.monotonic() - started)
         metrics.CHECKPOINT_BYTES.set(size)
 

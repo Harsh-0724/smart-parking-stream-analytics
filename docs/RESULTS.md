@@ -91,6 +91,21 @@ Every item below was found by executing the system (or by reviewing code that ha
 | 10 | Measurement | The first latency metric measured the age of a quiet window's last occupancy event (p95 29 s). | Prometheus check. | Per-event ingest-to-emit sampling (D18). |
 | 11 | Demo | Rebuilding images mid-run recreated the simulator and processors with a fresh clock; a restart with a different `--start` leaves processors with a stale watermark. | Frontend session. | `make demo-reset`; the first pre-demo step in DEMO.md. |
 | 12 | Processor | Checkpoint size grew with the event rate (every event id, heartbeats included, kept for 300 s and written into each lot's checkpoint) until it exceeded Kafka's 1 MB message limit at 25,000 events/s: the processors refused to checkpoint and crash-looped. | Load test (the chaos drills never reach that rate). | De-duplicate only state-changing events; `max.message.bytes` 16 MB on `state.changelog`; unit test that heartbeat ids are not remembered. |
+| 13 | Consumers | When the broker acting as group coordinator was killed and came back, `commit` failed with `UNKNOWN_MEMBER_ID`; the exception was uncaught, so processors (and potentially sink/alerter) **crashed and were restarted by Compose** (restart count 1 each). Recovery still worked through restart plus checkpoint restore, but a broker failure should not crash consumers. | Frontend self-review: `docker inspect` restart counts after the UI broker-kill test. | `common.kafka.commit_tolerant` logs and skips commits that fail because the coordinator is moving (offsets are a monitoring marker; recovery uses checkpoints); unit test; the broker drill now asserts every processor and sink has restart count 0. |
+| 14 | API pipeline collector | The long-lived Kafka probe consumer and admin client kept a stale metadata cache after a broker died: every watermark lookup failed with "host resolution failure" and consumer groups vanished from the Pipeline screen, exactly during a broker-kill demo. It also returned a blank result while failing. | Destructive UI test against the live stack. | Fresh admin client and probe consumer every 2 s cycle; on error the last good snapshot is kept and flagged instead of blanking; unit test. |
+| 15 | Web UI | The "Rebalancing" banner only showed while a group was mid-rebalance; a rebalance that finishes inside the 2 s poll flashed past unseen. The first version of the fix swallowed the first-ever rebalance when the history was empty at load. | Destructive UI test (passed once by luck, then failed). | Banner persists 15 s after a newly detected rebalance; component tests for both cases. |
+
+## Frontend self-review: full stack, live UI, real failures (2026-09-27)
+`make demo-reset` (weekday morning at 20x, 12 lots, 1,800 slots), then the opt-in destructive Playwright spec `web/tests/e2e/recovery.spec.ts` (`E2E_DESTRUCTIVE=1`) against the running stack through Caddy:
+
+| Drill | What the UI showed | Result |
+|---|---|---|
+| Kill one of two processors (`docker kill`) | Rebalance banner; all 6 partitions owned by the survivor; rebalance log entry; log line `partition assigned ... restored_lots ["LOT-..."] resume_offset ...`; events/s stayed > 0; restoring the second processor moved partitions back | PASS (26.7 s including restore) |
+| Kill the broker leading the most partitions | Broker row Down; its partitions re-elected onto the two survivors (leader count unchanged); "Brokers up 2 of 3"; events/s stayed > 0; after restart the row returned to Up | PASS (15.7 s) |
+| Restart counts after both drills | `docker inspect` on processors, sink, alerter, API | all 0 |
+| Latency during the processor failover | ingest-to-emit p95 rose to 23.6 s on the Pipeline screen (screenshot `docs/screenshots/pipeline-rebalance.png`) and recovered; this is the real cost of a rebalance | observed |
+
+Running these against the live product found bugs 13, 14 and 15 below, which the scripted drills did not.
 
 ## Phase 8: chaos runs (appended by scripts/chaos_*.py)
 
@@ -167,22 +182,6 @@ stop kafka-2 (SIGTERM, controlled shutdown) at ~30 s of a 120 s run (speed 60), 
 - leader election time: 1.7 s
 - time to full ISR after restart: not meaningful in this run (it was measured after the simulator finished; the SIGKILL run below measures it from the restart command)
 
-### Broker failure (SIGKILL crash): PASS (2026-09-26 16:40 UTC)
-SIGKILL kafka-2 at ~30 s of a 120 s run (speed 60), restart ~35 s later
-
-| Result | Expectation | Measured |
-|---|---|---|
-| PASS | leadership moved off kafka-2 within 30 s | 9.1 s (it led 22 partitions) |
-| PASS | pipeline kept producing closed windows during the outage | 60 -> 168 closed rows |
-| PASS | ISR fully restored after restart (0 under-replicated partitions) | 3 s after restart |
-| PASS | producer had no delivery errors (acks=all, RF=3, min.isr=2) | errors=0 |
-| PASS | consumer lag drains to 0 | 5 s |
-| PASS | no data loss: every closed window is in the database | missing=0 |
-| PASS | no wrong values vs ground truth | 276 windows compared, 0 mismatches |
-
-- leader election time: 9.1 s
-- time to full ISR after restart: 3 s
-
 ### HLL estimate vs exact distinct count: PASS (2026-09-26 16:41 UTC)
 HyperLogLog p=10: 1,024 bytes of registers, theoretical standard error 3.25%. Expectation: worst error under 3 standard errors (9.75%).
 
@@ -255,3 +254,20 @@ SIGKILL one of 2 processors at ~35 s of a 90 s run (speed 60)
 
 - takeover time (kill to partitions assigned): 10.4 s
 - simulator events sent: 130374
+
+### Broker failure (SIGKILL crash): PASS (2026-09-26 19:05 UTC)
+SIGKILL kafka-2 at ~30 s of a 120 s run (speed 60), restart ~35 s later
+
+| Result | Expectation | Measured |
+|---|---|---|
+| PASS | leadership moved off kafka-2 within 30 s | 9.6 s (it led 32 partitions) |
+| PASS | pipeline kept producing closed windows during the outage | 60 -> 168 closed rows |
+| PASS | ISR fully restored after restart (0 under-replicated partitions) | 3 s after restart |
+| PASS | producer had no delivery errors (acks=all, RF=3, min.isr=2) | errors=0 |
+| PASS | no consumer crashed or was restarted during the broker failure | restart counts ['0', '0', '0'] |
+| PASS | consumer lag drains to 0 | 11 s |
+| PASS | no data loss: every closed window is in the database | missing=0 |
+| PASS | no wrong values vs ground truth | 264 windows compared, 0 mismatches |
+
+- leader election time: 9.6 s
+- time to full ISR after restart: 3 s

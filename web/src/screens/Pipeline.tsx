@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { usePipelineRest } from "../api/hooks";
 import { useLive } from "../api/live";
-import type { BrokerInfo, ConsumerGroupInfo, PipelineStats } from "../api/types";
+import type { BrokerInfo, ConsumerGroupInfo, PipelineStats, RebalanceEvent } from "../api/types";
 import { fmtInt, fmtRate, fmtSeconds, fmtTime } from "../format";
 import { Badge, Stat, State, Table, type Column } from "../ui";
 
@@ -95,11 +95,40 @@ function Group({ group }: { group: ConsumerGroupInfo }) {
   );
 }
 
+const RECENT_REBALANCE_MS = 15_000;
+
+/** A rebalance can finish faster than the 2 s poll, so keep the newest one visible for a while. */
+function useRecentRebalance(latest: RebalanceEvent | undefined, loaded: boolean) {
+  const initialised = useRef(false);
+  const seen = useRef<string | null>(null);
+  const [recent, setRecent] = useState<RebalanceEvent | null>(null);
+  const ts = latest?.ts ?? null;
+  useEffect(() => {
+    if (!loaded) return;
+    if (!initialised.current) {
+      // Whatever history exists when the screen first has data (possibly none) is not news.
+      initialised.current = true;
+      seen.current = ts;
+      return;
+    }
+    if (!latest || ts === seen.current) return;
+    seen.current = ts;
+    setRecent(latest);
+  }, [loaded, latest, ts]);
+  useEffect(() => {
+    if (!recent) return;
+    const t = setTimeout(() => setRecent(null), RECENT_REBALANCE_MS);
+    return () => clearTimeout(t);
+  }, [recent]);
+  return recent;
+}
+
 export default function Pipeline() {
   const live = useLive();
   const rest = usePipelineRest();
   const p: PipelineStats | null = live.pipeline ?? rest.data ?? null;
   const brokerRows = useBrokerRows(p?.brokers);
+  const recentRebalance = useRecentRebalance(p?.rebalances[0], p !== null);
 
   if (!p) {
     return rest.isError ? (
@@ -119,11 +148,13 @@ export default function Pipeline() {
       </div>
 
       {p.error && <State kind="error" title="Kafka is not answering" hint={p.error} />}
-      {rebalancing.length > 0 && (
+      {(rebalancing.length > 0 || recentRebalance) && (
         <div className="banner" role="status">
-          <Badge kind="warn">Rebalancing</Badge>
+          <Badge kind="warn">{rebalancing.length > 0 ? "Rebalancing" : "Rebalanced"}</Badge>
           <span>
-            {rebalancing.map((g) => g.group_id).join(", ")}: partitions are being reassigned. Consumers pause briefly, then resume from their checkpoints.
+            {rebalancing.length > 0
+              ? `${rebalancing.map((g) => g.group_id).join(", ")}: partitions are being reassigned. Consumers pause briefly, then resume from their checkpoints.`
+              : `${recentRebalance?.group_id} at ${fmtTime(recentRebalance?.ts)}: ${recentRebalance?.description}`}
           </span>
         </div>
       )}

@@ -14,7 +14,7 @@ from alerter.hysteresis import FullLotDetector
 from alerter.notifiers import build_notifiers, dispatch
 from common import topics
 from common.config import Settings
-from common.kafka import consumer_config, producer_config, read_to_end
+from common.kafka import commit_tolerant, consumer_config, producer_config, read_to_end
 from common.logging import configure_logging
 from common.schemas import Alert, WindowResult
 
@@ -96,9 +96,8 @@ def main() -> None:
             # are committed; a crash in between re-derives the alert from restored state.
             if producer.flush(30):
                 raise RuntimeError("alerts not delivered; refusing to commit offsets")
-            consumer.commit(
-                offsets=[TopicPartition(t, p, o) for (t, p), o in offsets.items()],
-                asynchronous=False,
+            commit_tolerant(
+                consumer, [TopicPartition(t, p, o) for (t, p), o in offsets.items()], log
             )
     consumer.close()
     log.info("stopped")

@@ -14,7 +14,7 @@ from prometheus_client import Counter, Histogram, start_http_server
 
 from common import topics
 from common.config import Settings
-from common.kafka import consumer_config
+from common.kafka import commit_tolerant, consumer_config
 from common.logging import configure_logging
 from common.schemas import Alert, LotMetadata, WindowResult
 from sink.db import merge_windows, write_batch
@@ -122,8 +122,10 @@ class Sink:
         ROWS.labels("alerts").inc(len(alerts))
         ROWS.labels("lot_metadata").inc(len(lots))
         BATCHES.inc()
-        self._consumer.commit(
-            offsets=[TopicPartition(t, p, o) for (t, p), o in offsets.items()], asynchronous=False
+        commit_tolerant(
+            self._consumer,
+            [TopicPartition(t, p, o) for (t, p), o in offsets.items()],
+            self._log,
         )
 
 

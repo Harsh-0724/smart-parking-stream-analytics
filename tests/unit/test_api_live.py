@@ -112,3 +112,57 @@ def test_parse_slot_event_accepts_occupancy_and_ignores_everything_else() -> Non
         b'{"event_type":"OCCUPANCY","lot_id":"L","slot_id":"A","status":"FREE","event_ts":"nope"}',
     ):
         assert parse_slot_event(bad) is None
+
+
+def test_pipeline_collector_keeps_last_good_snapshot_when_kafka_stops_answering() -> None:
+    from datetime import UTC, datetime
+
+    from api.models import PipelineStats
+
+    good = PipelineStats(
+        generated_at=datetime.now(UTC), error=None, events_per_s=5.0, latency_p50_s=None,
+        latency_p95_s=None, dlq_messages=0, late_messages=0, brokers=[], topics=[], groups=[],
+        rebalances=[],
+    )  # fmt: skip
+    collector = PipelineCollector.__new__(PipelineCollector)
+    collector.rebalances = __import__("collections").deque(maxlen=5)
+    collector._last_good = None
+
+    calls = iter([good, RuntimeError("Local: All broker connections are down")])
+
+    def fake() -> PipelineStats:
+        item = next(calls)
+        if isinstance(item, Exception):
+            raise item
+        return item
+
+    collector._collect = fake  # type: ignore[method-assign]
+    assert collector.collect().error is None
+    stale = collector.collect()
+    assert stale.error is not None and "broker" in stale.error
+    assert stale.events_per_s == 5.0  # last good numbers are still shown
+
+
+def test_commit_tolerant_skips_transient_coordinator_errors_and_raises_others() -> None:
+    import pytest
+    from confluent_kafka import KafkaError, KafkaException
+
+    from common.kafka import commit_tolerant
+
+    class FakeConsumer:
+        def __init__(self, code: int | None) -> None:
+            self.code = code
+
+        def commit(self, **_: object) -> None:
+            if self.code is not None:
+                raise KafkaException(KafkaError(self.code))
+
+    class Log:
+        def warning(self, *_: object, **__: object) -> None:
+            pass
+
+    assert commit_tolerant(FakeConsumer(None), [], Log()) is True  # type: ignore[arg-type]
+    assert commit_tolerant(FakeConsumer(KafkaError.UNKNOWN_MEMBER_ID), [], Log()) is False  # type: ignore[arg-type]
+    assert commit_tolerant(FakeConsumer(KafkaError.NOT_COORDINATOR), [], Log()) is False  # type: ignore[arg-type]
+    with pytest.raises(KafkaException):
+        commit_tolerant(FakeConsumer(KafkaError.TOPIC_AUTHORIZATION_FAILED), [], Log())  # type: ignore[arg-type]

@@ -7,7 +7,7 @@ consumers commit manually, use the cooperative-sticky assignor and read committe
 import uuid
 from typing import Any
 
-from confluent_kafka import OFFSET_BEGINNING, Consumer, TopicPartition
+from confluent_kafka import OFFSET_BEGINNING, Consumer, KafkaError, KafkaException, TopicPartition
 
 
 def producer_config(bootstrap: str, client_id: str) -> dict[str, Any]:
@@ -74,3 +74,34 @@ def read_to_end(
         return records
     finally:
         consumer.close()
+
+
+# Errors that mean "the group coordinator moved or this member was fenced", not "the data is bad".
+# They occur when the broker acting as coordinator is killed and comes back.
+_TRANSIENT_COMMIT_ERRORS = frozenset(
+    {
+        KafkaError.UNKNOWN_MEMBER_ID,
+        KafkaError.ILLEGAL_GENERATION,
+        KafkaError.REBALANCE_IN_PROGRESS,
+        KafkaError.COORDINATOR_NOT_AVAILABLE,
+        KafkaError.NOT_COORDINATOR,
+        KafkaError.COORDINATOR_LOAD_IN_PROGRESS,
+    }
+)
+
+
+def commit_tolerant(consumer: Consumer, offsets: list[TopicPartition], log: Any) -> bool:
+    """Commit offsets; return False (and log) if the coordinator is moving instead of crashing.
+
+    Committed offsets are only a progress marker for monitoring: recovery does not depend on them
+    (the processor resumes from its own checkpoint, the sink replays idempotently), and the next
+    cycle commits again. A fenced member is told to rejoin through the rebalance callbacks."""
+    try:
+        consumer.commit(offsets=offsets, asynchronous=False)
+        return True
+    except KafkaException as exc:
+        error = exc.args[0]
+        if error.code() in _TRANSIENT_COMMIT_ERRORS:
+            log.warning("offset commit skipped, group coordinator is changing", error=str(error))
+            return False
+        raise
