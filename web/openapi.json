@@ -1,0 +1,1358 @@
+{
+ "components": {
+  "schemas": {
+   "AlertPage": {
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/AlertRow"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "limit": {
+      "title": "Limit",
+      "type": "integer"
+     },
+     "offset": {
+      "title": "Offset",
+      "type": "integer"
+     },
+     "total": {
+      "title": "Total",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "total",
+     "limit",
+     "offset",
+     "items"
+    ],
+    "title": "AlertPage",
+    "type": "object"
+   },
+   "AlertRow": {
+    "properties": {
+     "alert_id": {
+      "title": "Alert Id",
+      "type": "string"
+     },
+     "cleared_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Cleared At"
+     },
+     "duration_s": {
+      "title": "Duration S",
+      "type": "number"
+     },
+     "kind": {
+      "enum": [
+       "FULL_LOT",
+       "SENSOR_OFFLINE"
+      ],
+      "title": "Kind",
+      "type": "string"
+     },
+     "lot_id": {
+      "title": "Lot Id",
+      "type": "string"
+     },
+     "message": {
+      "title": "Message",
+      "type": "string"
+     },
+     "occupancy_pct": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Occupancy Pct"
+     },
+     "raised_at": {
+      "format": "date-time",
+      "title": "Raised At",
+      "type": "string"
+     },
+     "sensor_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Sensor Id"
+     },
+     "status": {
+      "enum": [
+       "active",
+       "cleared"
+      ],
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "alert_id",
+     "kind",
+     "lot_id",
+     "sensor_id",
+     "status",
+     "raised_at",
+     "cleared_at",
+     "duration_s",
+     "message",
+     "occupancy_pct"
+    ],
+    "title": "AlertRow",
+    "type": "object"
+   },
+   "BrokerInfo": {
+    "properties": {
+     "host": {
+      "title": "Host",
+      "type": "string"
+     },
+     "id": {
+      "title": "Id",
+      "type": "integer"
+     },
+     "leader_partitions": {
+      "title": "Leader Partitions",
+      "type": "integer"
+     },
+     "port": {
+      "title": "Port",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "id",
+     "host",
+     "port",
+     "leader_partitions"
+    ],
+    "title": "BrokerInfo",
+    "type": "object"
+   },
+   "ConsumerGroupInfo": {
+    "properties": {
+     "group_id": {
+      "title": "Group Id",
+      "type": "string"
+     },
+     "members": {
+      "items": {
+       "$ref": "#/components/schemas/GroupMember"
+      },
+      "title": "Members",
+      "type": "array"
+     },
+     "partitions": {
+      "items": {
+       "$ref": "#/components/schemas/GroupPartition"
+      },
+      "title": "Partitions",
+      "type": "array"
+     },
+     "rebalancing": {
+      "title": "Rebalancing",
+      "type": "boolean"
+     },
+     "state": {
+      "title": "State",
+      "type": "string"
+     },
+     "total_lag": {
+      "title": "Total Lag",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "group_id",
+     "state",
+     "rebalancing",
+     "members",
+     "total_lag",
+     "partitions"
+    ],
+    "title": "ConsumerGroupInfo",
+    "type": "object"
+   },
+   "GroupMember": {
+    "properties": {
+     "client_id": {
+      "title": "Client Id",
+      "type": "string"
+     },
+     "host": {
+      "title": "Host",
+      "type": "string"
+     },
+     "partitions": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Partitions",
+      "type": "array"
+     }
+    },
+    "required": [
+     "client_id",
+     "host",
+     "partitions"
+    ],
+    "title": "GroupMember",
+    "type": "object"
+   },
+   "GroupPartition": {
+    "properties": {
+     "committed": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Committed"
+     },
+     "end_offset": {
+      "title": "End Offset",
+      "type": "integer"
+     },
+     "lag": {
+      "title": "Lag",
+      "type": "integer"
+     },
+     "member": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Member"
+     },
+     "partition": {
+      "title": "Partition",
+      "type": "integer"
+     },
+     "topic": {
+      "title": "Topic",
+      "type": "string"
+     }
+    },
+    "required": [
+     "topic",
+     "partition",
+     "committed",
+     "end_offset",
+     "lag",
+     "member"
+    ],
+    "title": "GroupPartition",
+    "type": "object"
+   },
+   "HTTPValidationError": {
+    "properties": {
+     "detail": {
+      "items": {
+       "$ref": "#/components/schemas/ValidationError"
+      },
+      "title": "Detail",
+      "type": "array"
+     }
+    },
+    "title": "HTTPValidationError",
+    "type": "object"
+   },
+   "Health": {
+    "properties": {
+     "database": {
+      "title": "Database",
+      "type": "boolean"
+     },
+     "kafka_feed": {
+      "title": "Kafka Feed",
+      "type": "boolean"
+     },
+     "status": {
+      "enum": [
+       "ok",
+       "degraded"
+      ],
+      "title": "Status",
+      "type": "string"
+     },
+     "websocket_clients": {
+      "title": "Websocket Clients",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "status",
+     "database",
+     "kafka_feed",
+     "websocket_clients"
+    ],
+    "title": "Health",
+    "type": "object"
+   },
+   "History": {
+    "properties": {
+     "lot_id": {
+      "title": "Lot Id",
+      "type": "string"
+     },
+     "points": {
+      "items": {
+       "$ref": "#/components/schemas/HistoryPoint"
+      },
+      "title": "Points",
+      "type": "array"
+     },
+     "range_end": {
+      "format": "date-time",
+      "title": "Range End",
+      "type": "string"
+     },
+     "range_start": {
+      "format": "date-time",
+      "title": "Range Start",
+      "type": "string"
+     },
+     "resolution": {
+      "enum": [
+       "5m",
+       "1h"
+      ],
+      "title": "Resolution",
+      "type": "string"
+     }
+    },
+    "required": [
+     "lot_id",
+     "resolution",
+     "range_start",
+     "range_end",
+     "points"
+    ],
+    "title": "History",
+    "type": "object"
+   },
+   "HistoryPoint": {
+    "properties": {
+     "avg_occupancy_pct": {
+      "title": "Avg Occupancy Pct",
+      "type": "number"
+     },
+     "avg_occupied": {
+      "title": "Avg Occupied",
+      "type": "number"
+     },
+     "closed": {
+      "title": "Closed",
+      "type": "boolean"
+     },
+     "entries": {
+      "title": "Entries",
+      "type": "integer"
+     },
+     "exits": {
+      "title": "Exits",
+      "type": "integer"
+     },
+     "max_occupied": {
+      "title": "Max Occupied",
+      "type": "integer"
+     },
+     "min_occupied": {
+      "title": "Min Occupied",
+      "type": "integer"
+     },
+     "unique_vehicles_est": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Unique Vehicles Est"
+     },
+     "window_start": {
+      "format": "date-time",
+      "title": "Window Start",
+      "type": "string"
+     }
+    },
+    "required": [
+     "window_start",
+     "avg_occupied",
+     "avg_occupancy_pct",
+     "min_occupied",
+     "max_occupied",
+     "entries",
+     "exits",
+     "unique_vehicles_est",
+     "closed"
+    ],
+    "title": "HistoryPoint",
+    "type": "object"
+   },
+   "LotDetail": {
+    "properties": {
+     "capacity": {
+      "title": "Capacity",
+      "type": "integer"
+     },
+     "columns": {
+      "title": "Columns",
+      "type": "integer"
+     },
+     "dwell_minutes_est": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Dwell Minutes Est"
+     },
+     "entries_24h": {
+      "title": "Entries 24H",
+      "type": "integer"
+     },
+     "exits_24h": {
+      "title": "Exits 24H",
+      "type": "integer"
+     },
+     "full_since": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Full Since"
+     },
+     "latitude": {
+      "title": "Latitude",
+      "type": "number"
+     },
+     "longitude": {
+      "title": "Longitude",
+      "type": "number"
+     },
+     "lot_id": {
+      "title": "Lot Id",
+      "type": "string"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "occupancy_pct": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Occupancy Pct"
+     },
+     "occupied": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Occupied"
+     },
+     "personality": {
+      "enum": [
+       "office",
+       "mall",
+       "station"
+      ],
+      "title": "Personality",
+      "type": "string"
+     },
+     "slot_ids": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Slot Ids",
+      "type": "array"
+     },
+     "unique_vehicles_est": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Unique Vehicles Est"
+     }
+    },
+    "required": [
+     "lot_id",
+     "name",
+     "personality",
+     "capacity",
+     "columns",
+     "latitude",
+     "longitude",
+     "slot_ids",
+     "occupied",
+     "occupancy_pct",
+     "entries_24h",
+     "exits_24h",
+     "unique_vehicles_est",
+     "dwell_minutes_est",
+     "full_since"
+    ],
+    "title": "LotDetail",
+    "type": "object"
+   },
+   "LotSummary": {
+    "properties": {
+     "as_of": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "As Of"
+     },
+     "capacity": {
+      "title": "Capacity",
+      "type": "integer"
+     },
+     "lot_id": {
+      "title": "Lot Id",
+      "type": "string"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "occupancy_pct": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Occupancy Pct"
+     },
+     "occupied": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Occupied"
+     },
+     "personality": {
+      "enum": [
+       "office",
+       "mall",
+       "station"
+      ],
+      "title": "Personality",
+      "type": "string"
+     },
+     "spark": {
+      "items": {
+       "type": "number"
+      },
+      "title": "Spark",
+      "type": "array"
+     }
+    },
+    "required": [
+     "lot_id",
+     "name",
+     "personality",
+     "capacity",
+     "occupied",
+     "occupancy_pct",
+     "as_of",
+     "spark"
+    ],
+    "title": "LotSummary",
+    "type": "object"
+   },
+   "Overview": {
+    "properties": {
+     "active_alerts": {
+      "title": "Active Alerts",
+      "type": "integer"
+     },
+     "generated_at": {
+      "format": "date-time",
+      "title": "Generated At",
+      "type": "string"
+     },
+     "lots": {
+      "items": {
+       "$ref": "#/components/schemas/LotSummary"
+      },
+      "title": "Lots",
+      "type": "array"
+     },
+     "occupancy_pct": {
+      "title": "Occupancy Pct",
+      "type": "number"
+     },
+     "total_capacity": {
+      "title": "Total Capacity",
+      "type": "integer"
+     },
+     "total_occupied": {
+      "title": "Total Occupied",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "total_capacity",
+     "total_occupied",
+     "occupancy_pct",
+     "lots",
+     "active_alerts",
+     "generated_at"
+    ],
+    "title": "Overview",
+    "type": "object"
+   },
+   "PartitionInfo": {
+    "properties": {
+     "end_offset": {
+      "title": "End Offset",
+      "type": "integer"
+     },
+     "isr": {
+      "items": {
+       "type": "integer"
+      },
+      "title": "Isr",
+      "type": "array"
+     },
+     "leader": {
+      "title": "Leader",
+      "type": "integer"
+     },
+     "partition": {
+      "title": "Partition",
+      "type": "integer"
+     },
+     "replicas": {
+      "items": {
+       "type": "integer"
+      },
+      "title": "Replicas",
+      "type": "array"
+     }
+    },
+    "required": [
+     "partition",
+     "leader",
+     "replicas",
+     "isr",
+     "end_offset"
+    ],
+    "title": "PartitionInfo",
+    "type": "object"
+   },
+   "PipelineStats": {
+    "properties": {
+     "brokers": {
+      "items": {
+       "$ref": "#/components/schemas/BrokerInfo"
+      },
+      "title": "Brokers",
+      "type": "array"
+     },
+     "dlq_messages": {
+      "title": "Dlq Messages",
+      "type": "integer"
+     },
+     "error": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Error"
+     },
+     "events_per_s": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Events Per S"
+     },
+     "generated_at": {
+      "format": "date-time",
+      "title": "Generated At",
+      "type": "string"
+     },
+     "groups": {
+      "items": {
+       "$ref": "#/components/schemas/ConsumerGroupInfo"
+      },
+      "title": "Groups",
+      "type": "array"
+     },
+     "late_messages": {
+      "title": "Late Messages",
+      "type": "integer"
+     },
+     "latency_p50_s": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Latency P50 S"
+     },
+     "latency_p95_s": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Latency P95 S"
+     },
+     "rebalances": {
+      "items": {
+       "$ref": "#/components/schemas/RebalanceEvent"
+      },
+      "title": "Rebalances",
+      "type": "array"
+     },
+     "topics": {
+      "items": {
+       "$ref": "#/components/schemas/TopicInfo"
+      },
+      "title": "Topics",
+      "type": "array"
+     }
+    },
+    "required": [
+     "generated_at",
+     "error",
+     "events_per_s",
+     "latency_p50_s",
+     "latency_p95_s",
+     "dlq_messages",
+     "late_messages",
+     "brokers",
+     "topics",
+     "groups",
+     "rebalances"
+    ],
+    "title": "PipelineStats",
+    "type": "object"
+   },
+   "RebalanceEvent": {
+    "properties": {
+     "description": {
+      "title": "Description",
+      "type": "string"
+     },
+     "group_id": {
+      "title": "Group Id",
+      "type": "string"
+     },
+     "ts": {
+      "format": "date-time",
+      "title": "Ts",
+      "type": "string"
+     }
+    },
+    "required": [
+     "ts",
+     "group_id",
+     "description"
+    ],
+    "title": "RebalanceEvent",
+    "type": "object"
+   },
+   "SlotSnapshot": {
+    "properties": {
+     "lot_id": {
+      "title": "Lot Id",
+      "type": "string"
+     },
+     "slots": {
+      "items": {
+       "$ref": "#/components/schemas/SlotState"
+      },
+      "title": "Slots",
+      "type": "array"
+     }
+    },
+    "required": [
+     "lot_id",
+     "slots"
+    ],
+    "title": "SlotSnapshot",
+    "type": "object"
+   },
+   "SlotState": {
+    "properties": {
+     "occupied": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Occupied"
+     },
+     "slot_id": {
+      "title": "Slot Id",
+      "type": "string"
+     },
+     "ts": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Ts"
+     }
+    },
+    "required": [
+     "slot_id",
+     "occupied",
+     "ts"
+    ],
+    "title": "SlotState",
+    "type": "object"
+   },
+   "TopicInfo": {
+    "properties": {
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "partitions": {
+      "items": {
+       "$ref": "#/components/schemas/PartitionInfo"
+      },
+      "title": "Partitions",
+      "type": "array"
+     },
+     "total_messages": {
+      "title": "Total Messages",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "name",
+     "partitions",
+     "total_messages"
+    ],
+    "title": "TopicInfo",
+    "type": "object"
+   },
+   "ValidationError": {
+    "properties": {
+     "ctx": {
+      "title": "Context",
+      "type": "object"
+     },
+     "input": {
+      "title": "Input"
+     },
+     "loc": {
+      "items": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "integer"
+        }
+       ]
+      },
+      "title": "Location",
+      "type": "array"
+     },
+     "msg": {
+      "title": "Message",
+      "type": "string"
+     },
+     "type": {
+      "title": "Error Type",
+      "type": "string"
+     }
+    },
+    "required": [
+     "loc",
+     "msg",
+     "type"
+    ],
+    "title": "ValidationError",
+    "type": "object"
+   }
+  }
+ },
+ "info": {
+  "description": "Live occupancy, history, alerts and pipeline introspection for the parking stream.",
+  "title": "Smart Parking Analytics API",
+  "version": "1.0.0"
+ },
+ "openapi": "3.1.0",
+ "paths": {
+  "/api/alerts": {
+   "get": {
+    "operationId": "alerts_api_alerts_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "kind",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "enum": [
+          "FULL_LOT",
+          "SENSOR_OFFLINE"
+         ],
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Kind"
+      }
+     },
+     {
+      "in": "query",
+      "name": "status",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "enum": [
+          "active",
+          "cleared"
+         ],
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Status"
+      }
+     },
+     {
+      "in": "query",
+      "name": "lot_id",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Lot Id"
+      }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 50,
+       "maximum": 200,
+       "minimum": 1,
+       "title": "Limit",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "offset",
+      "required": false,
+      "schema": {
+       "default": 0,
+       "minimum": 0,
+       "title": "Offset",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AlertPage"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Alerts",
+    "tags": [
+     "alerts"
+    ]
+   }
+  },
+  "/api/health": {
+   "get": {
+    "operationId": "health_api_health_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Health"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Health",
+    "tags": [
+     "ops"
+    ]
+   }
+  },
+  "/api/lots": {
+   "get": {
+    "operationId": "list_lots_api_lots_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/LotSummary"
+         },
+         "title": "Response List Lots Api Lots Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Lots",
+    "tags": [
+     "lots"
+    ]
+   }
+  },
+  "/api/lots/{lot_id}": {
+   "get": {
+    "operationId": "lot_detail_api_lots__lot_id__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "lot_id",
+      "required": true,
+      "schema": {
+       "title": "Lot Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/LotDetail"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Lot Detail",
+    "tags": [
+     "lots"
+    ]
+   }
+  },
+  "/api/lots/{lot_id}/history": {
+   "get": {
+    "description": "Default range: the 24 h ending at the lot's newest window (not wall-clock now).",
+    "operationId": "lot_history_api_lots__lot_id__history_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "lot_id",
+      "required": true,
+      "schema": {
+       "title": "Lot Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "resolution",
+      "required": false,
+      "schema": {
+       "default": "5m",
+       "enum": [
+        "5m",
+        "1h"
+       ],
+       "title": "Resolution",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "start",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "format": "date-time",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Start"
+      }
+     },
+     {
+      "in": "query",
+      "name": "end",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "format": "date-time",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "End"
+      }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 500,
+       "maximum": 2000,
+       "minimum": 1,
+       "title": "Limit",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/History"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Lot History",
+    "tags": [
+     "lots"
+    ]
+   }
+  },
+  "/api/lots/{lot_id}/slots": {
+   "get": {
+    "operationId": "slot_snapshot_api_lots__lot_id__slots_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "lot_id",
+      "required": true,
+      "schema": {
+       "title": "Lot Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SlotSnapshot"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Slot Snapshot",
+    "tags": [
+     "lots"
+    ]
+   }
+  },
+  "/api/overview": {
+   "get": {
+    "operationId": "overview_api_overview_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Overview"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Overview",
+    "tags": [
+     "lots"
+    ]
+   }
+  },
+  "/api/pipeline": {
+   "get": {
+    "operationId": "pipeline_api_pipeline_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PipelineStats"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Pipeline",
+    "tags": [
+     "pipeline"
+    ]
+   }
+  }
+ }
+}

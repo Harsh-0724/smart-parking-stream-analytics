@@ -93,4 +93,4 @@ def test_rebalance_detection_reports_start_and_finish() -> None:
     collector._detect_rebalance(_group("PreparingRebalance", {"a": ["t[0]"]}))
     collector._detect_rebalance(_group("Stable", {"a": ["t[0]", "t[1]", "t[2]"]}))
     texts = [e.description for e in collector.rebalances]
-    assert texts[0] == "rebalance started" and texts[1].startswith("rebalance finished: 1 member")
+    assert texts[0] == "rebalance started" and texts[1].startswith("rebalance finished: a holds 3")

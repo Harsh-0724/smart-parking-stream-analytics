@@ -1,0 +1,98 @@
+/* Design tokens: the single source of truth for every colour, size and space in the UI.
+   tokens.ts mirrors the scales for TypeScript; tests/tokens.test.ts keeps the two in sync. */
+
+:root {
+  /* Type: one sans for UI, one mono for numbers, IDs and timestamps. Scale 12/13/16/24/48. */
+  --font-ui: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --fs-1: 12px;
+  --fs-2: 13px;
+  --fs-3: 16px;
+  --fs-4: 24px;
+  --fs-5: 48px;
+  --lh-tight: 1.15;
+  --lh-body: 1.45;
+
+  /* Space: strict 4px grid */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+  --sp-7: 48px;
+
+  --radius: 4px;
+  --radius-lg: 6px;
+  --hair: 1px;
+  --rail-w: 208px;
+  --row-h: 32px;
+
+  /* Motion: functional only */
+  --dur: 160ms;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* Light: warm off-white */
+:root,
+:root[data-theme="light"] {
+  --bg: #f5f3ee;
+  --surface: #fbfaf7;
+  --sunken: #edeae2;
+  --line: #e0dcd2;
+  --line-strong: #c4bfb2;
+  --text: #1b1a17;
+  --text-2: #57524a;
+  --text-3: #6f695e;
+  --accent: #0b7a6e;
+  --accent-soft: #dcece8;
+  --on-accent: #ffffff;
+  --st-warn: #8a5a00;
+  --st-crit: #b42318;
+  --slot-occupied: #1b1a17;
+  --slot-free: #c4bfb2;
+}
+
+/* Dark: neutral near-black, same single accent, brighter for contrast */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111110;
+    --surface: #171716;
+    --sunken: #0d0d0c;
+    --line: #292825;
+    --line-strong: #3d3b36;
+    --text: #ece9e1;
+    --text-2: #b0aba0;
+    --text-3: #8e897e;
+    --accent: #3cc8b4;
+    --accent-soft: #12302b;
+    --on-accent: #0d0d0c;
+    --st-warn: #e2a93b;
+    --st-crit: #f27a6c;
+    --slot-occupied: #ece9e1;
+    --slot-free: #4a4740;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111110;
+  --surface: #171716;
+  --sunken: #0d0d0c;
+  --line: #292825;
+  --line-strong: #3d3b36;
+  --text: #ece9e1;
+  --text-2: #b0aba0;
+  --text-3: #8e897e;
+  --accent: #3cc8b4;
+  --accent-soft: #12302b;
+  --on-accent: #0d0d0c;
+  --st-warn: #e2a93b;
+  --st-crit: #f27a6c;
+  --slot-occupied: #ece9e1;
+  --slot-free: #4a4740;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur: 0.01ms;
+  }
+}

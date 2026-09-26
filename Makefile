@@ -1,4 +1,4 @@
-.PHONY: up down clean topics lint type test test-integration fmt sync fetch-data reset-topics chaos chaos-broker chaos-processor chaos-sink chaos-bad-data chaos-late-dup chaos-lag hll-accuracy demo-reset
+.PHONY: up down clean topics lint type test test-integration fmt sync fetch-data reset-topics chaos chaos-broker chaos-processor chaos-sink chaos-bad-data chaos-late-dup chaos-lag hll-accuracy demo-reset openapi
 
 COMPOSE ?= docker compose
 # Host-side tools reach the brokers through the EXTERNAL listeners.
@@ -66,3 +66,8 @@ demo-reset:
 	$(COMPOSE) exec -T timescaledb psql -U $${POSTGRES_USER:-parking} -d $${POSTGRES_DB:-parking} -qc "truncate lot_occupancy_5min, alerts, lot_metadata"
 	$(COMPOSE) up -d --build --wait --remove-orphans
 	$(COMPOSE) restart api
+
+# Frontend API types are generated from the FastAPI schema (committed: web/openapi.json).
+openapi:
+	uv run python -c "import json; from api.main import app; print(json.dumps(app.openapi(), indent=1, sort_keys=True))" > web/openapi.json
+	cd web && pnpm gen:types

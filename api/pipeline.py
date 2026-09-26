@@ -201,14 +201,12 @@ class PipelineCollector:
         if group.rebalancing and previous[0] != "rebalancing":
             text = "rebalance started"
         elif previous[0] == "rebalancing" and not group.rebalancing:
-            text = f"rebalance finished: {len(group.members)} member(s), partitions {self._layout(group)}"  # noqa: E501
+            text = f"rebalance finished: {self._layout(group)}"
         else:
-            text = f"assignment changed: {len(previous[1])} to {len(group.members)} member(s), {self._layout(group)}"  # noqa: E501
+            text = f"assignment changed: {self._layout(group)}"
         self.rebalances.append(RebalanceEvent(ts=_now(), group_id=group.group_id, description=text))
 
     @staticmethod
     def _layout(group: ConsumerGroupInfo) -> str:
-        return (
-            "; ".join(f"{m.client_id[:8]}: {len(m.partitions)}" for m in group.members)
-            or "no members"
-        )
+        parts = [f"{m.client_id[:8]} holds {len(m.partitions)}" for m in group.members]
+        return "; ".join(parts) or "no members"
